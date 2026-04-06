@@ -19,8 +19,10 @@ export default function LoginPage() {
     setLoading(true);
     const ok = await login(email, password);
     setLoading(false);
-    if (ok) {
+    if (ok === true) {
       navigate("/dashboard");
+    } else if (typeof ok === "string") {
+      setError(ok);
     } else {
       setError("Invalid credentials");
     }

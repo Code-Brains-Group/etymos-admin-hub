@@ -1,3 +1,10 @@
+import { cn } from "@/lib/utils";
+
+// Generic inline skeleton bar — used in pages
+export function LoadingSkeleton({ className }: { className?: string }) {
+  return <div className={cn("bg-muted animate-pulse rounded-sm", className)} />;
+}
+
 export function TableSkeleton({ rows = 5, cols = 5 }: { rows?: number; cols?: number }) {
   return (
     <div className="space-y-3">

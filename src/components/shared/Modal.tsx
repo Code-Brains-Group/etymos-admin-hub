@@ -6,9 +6,15 @@ interface ModalProps {
   title: string;
   children: React.ReactNode;
   footer?: React.ReactNode;
+  size?: "md" | "lg" | "xl";
 }
 
-export function Modal({ open, onClose, title, children, footer }: ModalProps) {
+export function Modal({ open, onClose, title, children, footer, size = "md" }: ModalProps) {
+  const sizeClasses = {
+    md: "max-w-lg",
+    lg: "max-w-3xl",
+    xl: "max-w-5xl",
+  };
   useEffect(() => {
     if (!open) return;
     const handler = (e: KeyboardEvent) => {
@@ -26,7 +32,7 @@ export function Modal({ open, onClose, title, children, footer }: ModalProps) {
       onClick={onClose}
     >
       <div
-        className="bg-background border border-border w-full max-w-lg max-h-[85vh] flex flex-col"
+        className={`bg-background border border-border w-full ${sizeClasses[size]} max-h-[85vh] flex flex-col`}
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between p-6 border-b border-border">

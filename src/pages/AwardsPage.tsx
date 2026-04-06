@@ -1,127 +1,354 @@
 import { useState } from "react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useAuth } from "@/contexts/AuthContext";
 import { Modal } from "@/components/shared/Modal";
 import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
+import { LoadingSkeleton } from "@/components/shared/LoadingSkeleton";
 import { toast } from "sonner";
 import { Pencil, Trash2, Gift } from "lucide-react";
+import type { Award } from "@/lib/api";
+import { DataPagination } from "@/components/shared/DataPagination";
 
-interface AwardItem {
-  id: number;
-  title: string;
-  description: string;
-  iconUrl: string;
-  pointsRequired: number;
-}
-
-const initialAwards: AwardItem[] = [
-  { id: 1, title: "Word Master", description: "Complete 100 quizzes", iconUrl: "", pointsRequired: 500 },
-  { id: 2, title: "Vocabulary Guru", description: "Search 1000 words", iconUrl: "", pointsRequired: 1000 },
-  { id: 3, title: "Quiz Champion", description: "Score 100% on 10 quizzes", iconUrl: "", pointsRequired: 750 },
-  { id: 4, title: "Speed Demon", description: "Complete a quiz in under 30 seconds", iconUrl: "", pointsRequired: 300 },
-  { id: 5, title: "Streak Master", description: "7-day login streak", iconUrl: "", pointsRequired: 200 },
-  { id: 6, title: "Competition Winner", description: "Win a competition", iconUrl: "", pointsRequired: 1500 },
-];
+const PAGE_SIZE = 12;
 
 export default function AwardsPage() {
-  const [awards, setAwards] = useState(initialAwards);
-  const [editAward, setEditAward] = useState<AwardItem | null>(null);
+  const { api } = useAuth();
+  const qc = useQueryClient();
+
+  const [editAward, setEditAward] = useState<Award | null>(null);
   const [isNew, setIsNew] = useState(false);
-  const [deleteAward, setDeleteAward] = useState<AwardItem | null>(null);
-  const [grantAward, setGrantAward] = useState<AwardItem | null>(null);
+  const [deleteAward, setDeleteAward] = useState<Award | null>(null);
+  const [grantAward, setGrantAward] = useState<Award | null>(null);
   const [grantUserId, setGrantUserId] = useState("");
+  const [grantReason, setGrantReason] = useState("");
+  const [page, setPage] = useState(1);
 
   const [formTitle, setFormTitle] = useState("");
   const [formDesc, setFormDesc] = useState("");
   const [formIcon, setFormIcon] = useState("");
   const [formPoints, setFormPoints] = useState(0);
+  const [formCompId, setFormCompId] = useState("");
 
+  // ── Queries ─────────────────────────────────────────────────
+  const { data: awardsData, isLoading, isError } = useQuery({
+    queryKey: ["admin-awards", page],
+    queryFn: () => api.adminAwards.list(page, PAGE_SIZE),
+  });
+
+  const awards = awardsData?.items || [];
+  const totalAwards = awardsData?.total_count || 0;
+  const totalPages = Math.ceil(totalAwards / PAGE_SIZE);
+
+  const { data: competitionsData } = useQuery({
+    queryKey: ["admin-competitions", "dropdown"],
+    queryFn: () => api.adminCompetitions.list(1, 100),
+  });
+  const competitions = competitionsData?.items || [];
+
+  const invalidate = () => qc.invalidateQueries({ queryKey: ["admin-awards"] });
+
+  // ── Mutations ───────────────────────────────────────────────
+  const createMutation = useMutation({
+    mutationFn: (payload: {
+      title: string;
+      description: string;
+      icon_url: string;
+      points_required: number;
+      competition_id?: string;
+    }) => api.adminAwards.create(payload),
+    onSuccess: () => { toast.success("Award created"); invalidate(); setEditAward(null); },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  const updateMutation = useMutation({
+    mutationFn: ({ id, payload }: {
+      id: number;
+      payload: { title?: string; description?: string; icon_url?: string; points_required?: number; competition_id?: string };
+    }) => api.adminAwards.update(id, payload),
+    onSuccess: () => { toast.success("Award updated"); invalidate(); setEditAward(null); },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: (id: number) => api.adminAwards.delete(id),
+    onSuccess: () => { toast.success("Award deleted"); invalidate(); setDeleteAward(null); },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  const grantMutation = useMutation({
+    mutationFn: ({ awardId, userId, reason }: { awardId: number; userId: string; reason: string }) =>
+      api.adminAwards.grant({ award_id: awardId, user_id: userId, reason }),
+    onSuccess: () => { 
+      toast.success("Award granted successfully"); 
+      setGrantAward(null); 
+      setGrantUserId(""); 
+      setGrantReason("");
+      qc.invalidateQueries({ queryKey: ["admin-activities"] });
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  // ── Handlers ────────────────────────────────────────────────
   const openCreate = () => {
-    setIsNew(true); setFormTitle(""); setFormDesc(""); setFormIcon(""); setFormPoints(0);
-    setEditAward({} as AwardItem);
+    setIsNew(true);
+    setFormTitle(""); setFormDesc(""); setFormIcon(""); setFormPoints(0); setFormCompId("");
+    setEditAward({} as Award);
   };
 
-  const openEdit = (a: AwardItem) => {
-    setIsNew(false); setFormTitle(a.title); setFormDesc(a.description); setFormIcon(a.iconUrl); setFormPoints(a.pointsRequired);
+  const openEdit = (a: Award) => {
+    setIsNew(false);
+    setFormTitle(a.title); setFormDesc(a.description);
+    setFormIcon(a.icon_url); setFormPoints(a.points_required);
+    setFormCompId(a.competition_id || "");
     setEditAward(a);
   };
 
   const handleSave = () => {
     if (!formTitle.trim()) { toast.error("Title is required"); return; }
+    const payload = {
+      title: formTitle,
+      description: formDesc,
+      icon_url: formIcon,
+      points_required: formPoints,
+      competition_id: formCompId || undefined,
+    };
     if (isNew) {
-      setAwards((p) => [...p, { id: Date.now(), title: formTitle, description: formDesc, iconUrl: formIcon, pointsRequired: formPoints }]);
-      toast.success("Award created");
-    } else if (editAward) {
-      setAwards((p) => p.map((a) => a.id === editAward.id ? { ...a, title: formTitle, description: formDesc, iconUrl: formIcon, pointsRequired: formPoints } : a));
-      toast.success("Award updated");
+      createMutation.mutate(payload);
+    } else if (editAward?.id) {
+      updateMutation.mutate({ id: editAward.id, payload });
     }
-    setEditAward(null);
+  };
+
+  const handleGrant = () => {
+    if (!grantUserId.trim()) { toast.error("User ID is required"); return; }
+    if (!grantReason.trim()) { toast.error("Reason is required"); return; }
+    if (!grantAward) return;
+    grantMutation.mutate({ awardId: grantAward.id, userId: grantUserId.trim(), reason: grantReason.trim() });
   };
 
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-end">
-        <button onClick={openCreate} className="px-4 py-2 text-sm bg-primary text-primary-foreground hover:opacity-90">+ New Award</button>
+        <button
+          onClick={openCreate}
+          className="px-4 py-2 text-sm bg-primary text-primary-foreground hover:opacity-90"
+        >
+          + New Award
+        </button>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-        {awards.map((a) => (
-          <div key={a.id} className="border border-border flex flex-col">
-            <div className="h-28 bg-muted flex items-center justify-center text-3xl">🏅</div>
-            <div className="p-4 flex-1 flex flex-col">
-              <h3 className="font-semibold mb-1">{a.title}</h3>
-              <p className="text-sm text-muted-foreground flex-1">{a.description}</p>
-              <div className="flex items-center justify-between mt-3">
-                <span className="text-xs font-mono bg-muted px-2 py-0.5">{a.pointsRequired} pts</span>
-                <div className="flex gap-2">
-                  <button onClick={() => { setGrantAward(a); setGrantUserId(""); }} className="text-muted-foreground hover:text-foreground"><Gift className="h-3.5 w-3.5" /></button>
-                  <button onClick={() => openEdit(a)} className="text-muted-foreground hover:text-foreground"><Pencil className="h-3.5 w-3.5" /></button>
-                  <button onClick={() => setDeleteAward(a)} className="text-muted-foreground hover:text-destructive"><Trash2 className="h-3.5 w-3.5" /></button>
+      {isLoading ? (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+          {Array.from({ length: 8 }).map((_, i) => (
+            <LoadingSkeleton key={i} className="h-48" />
+          ))}
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+          {awards.map((a, i) => {
+            const globalIndex = (page - 1) * PAGE_SIZE + i + 1;
+            return (
+              <div key={a.id} className="border border-border flex flex-col relative group">
+                <div className="absolute top-2 left-2 z-10 px-1.5 py-0.5 bg-background/80 backdrop-blur-sm border border-border text-[9px] font-mono font-bold text-muted-foreground shadow-sm">
+                  #{globalIndex.toString().padStart(2, "0")}
+                </div>
+                <div className="h-28 bg-muted flex items-center justify-center">
+                  {a.icon_url ? (
+                    <img src={a.icon_url} alt={a.title} className="h-20 w-20 object-contain" />
+                  ) : (
+                    <span className="text-3xl">🏅</span>
+                  )}
+                </div>
+                <div className="p-4 flex-1 flex flex-col">
+                  <div className="flex flex-col gap-1 mb-2">
+                    <h3 className="font-semibold leading-tight">{a.title}</h3>
+                    {a.competition_title && (
+                      <span className="inline-block self-start text-[9px] font-bold uppercase tracking-tighter bg-primary/10 text-primary px-1.5 py-0.5 border border-primary/20">
+                        {a.competition_title}
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-sm text-muted-foreground flex-1 line-clamp-2">{a.description}</p>
+                  <div className="flex items-center justify-between mt-3">
+                    <span className="text-xs font-mono bg-muted px-2 py-0.5">
+                      {(a.points_required ?? 0).toLocaleString()} pts
+                    </span>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => { setGrantAward(a); setGrantUserId(""); setGrantReason(""); }}
+                        className="p-1.5 border border-border hover:bg-accent transition-colors"
+                        title="Grant to user"
+                      >
+                        <Gift className="h-3.5 w-3.5" />
+                      </button>
+                      <button
+                        onClick={() => openEdit(a)}
+                        className="p-1.5 border border-border hover:bg-accent transition-colors"
+                        title="Edit award"
+                      >
+                        <Pencil className="h-3.5 w-3.5" />
+                      </button>
+                      <button
+                        onClick={() => setDeleteAward(a)}
+                        className="p-1.5 border border-destructive/20 text-destructive hover:bg-destructive hover:text-destructive-foreground transition-colors"
+                        title="Delete award"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                  </div>
                 </div>
               </div>
+            );
+          })}
+          {awards.length === 0 && (
+            <div className="col-span-full text-center py-12 text-muted-foreground text-sm">
+              No awards matched your query.
             </div>
-          </div>
-        ))}
-      </div>
+          )}
+        </div>
+      )}
 
-      {/* Create/Edit Modal */}
-      <Modal open={!!editAward} onClose={() => setEditAward(null)} title={isNew ? "New Award" : "Edit Award"} footer={
-        <>
-          <button onClick={() => setEditAward(null)} className="px-4 py-2 text-sm border border-border hover:bg-accent">Cancel</button>
-          <button onClick={handleSave} className="px-4 py-2 text-sm bg-primary text-primary-foreground hover:opacity-90">Save</button>
-        </>
-      }>
+      <DataPagination
+        currentPage={page}
+        totalPages={totalPages}
+        onPageChange={setPage}
+      />
+
+      {isError && (
+        <div className="bg-destructive/10 border border-destructive text-destructive p-4 text-sm text-center">
+          Failed to load awards. Please check your network or refresh the page.
+        </div>
+      )}
+
+      <Modal
+        open={!!editAward}
+        onClose={() => setEditAward(null)}
+        title={isNew ? "New Award" : "Edit Award"}
+        footer={
+          <>
+            <button
+              onClick={() => setEditAward(null)}
+              className="px-4 py-2 text-sm border border-border hover:bg-accent"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleSave}
+              disabled={createMutation.isPending || updateMutation.isPending}
+              className="px-4 py-2 text-sm bg-primary text-primary-foreground hover:opacity-90 disabled:opacity-50"
+            >
+              {createMutation.isPending || updateMutation.isPending ? "Saving..." : "Save"}
+            </button>
+          </>
+        }
+      >
         <div className="space-y-4">
           <div>
             <label className="block text-xs font-medium uppercase tracking-wide mb-1.5">Title</label>
-            <input value={formTitle} onChange={(e) => setFormTitle(e.target.value)} className="w-full border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-ring" />
+            <input
+              value={formTitle}
+              onChange={(e) => setFormTitle(e.target.value)}
+              className="w-full border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-ring"
+            />
           </div>
           <div>
             <label className="block text-xs font-medium uppercase tracking-wide mb-1.5">Description</label>
-            <textarea value={formDesc} onChange={(e) => setFormDesc(e.target.value)} rows={2} className="w-full border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-ring resize-none" />
+            <textarea
+              value={formDesc}
+              onChange={(e) => setFormDesc(e.target.value)}
+              rows={2}
+              className="w-full border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-ring resize-none"
+            />
           </div>
           <div>
             <label className="block text-xs font-medium uppercase tracking-wide mb-1.5">Icon URL</label>
-            <input value={formIcon} onChange={(e) => setFormIcon(e.target.value)} className="w-full border border-input bg-background px-3 py-2 text-sm font-mono focus:outline-none focus:ring-1 focus:ring-ring" />
+            <input
+              value={formIcon}
+              onChange={(e) => setFormIcon(e.target.value)}
+              className="w-full border border-input bg-background px-3 py-2 text-sm font-mono focus:outline-none focus:ring-1 focus:ring-ring"
+            />
           </div>
           <div>
             <label className="block text-xs font-medium uppercase tracking-wide mb-1.5">Points Required</label>
-            <input type="number" value={formPoints} onChange={(e) => setFormPoints(Number(e.target.value))} className="w-full border border-input bg-background px-3 py-2 text-sm font-mono focus:outline-none focus:ring-1 focus:ring-ring" />
+            <input
+              type="number"
+              min={0}
+              value={formPoints}
+              onChange={(e) => setFormPoints(Number(e.target.value))}
+              className="w-full border border-input bg-background px-3 py-2 text-sm font-mono focus:outline-none focus:ring-1 focus:ring-ring"
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-medium uppercase tracking-wide mb-1.5">Link to Competition (Optional)</label>
+            <select
+              value={formCompId}
+              onChange={(e) => setFormCompId(e.target.value)}
+              className="w-full border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-ring"
+            >
+              <option value="">— Independent Award —</option>
+              {competitions.map((c) => (
+                <option key={c.id} value={c.id}>{c.title}</option>
+              ))}
+            </select>
           </div>
         </div>
       </Modal>
 
-      <ConfirmDialog open={!!deleteAward} onClose={() => setDeleteAward(null)} onConfirm={() => { setAwards((p) => p.filter((a) => a.id !== deleteAward?.id)); toast.success("Award deleted"); setDeleteAward(null); }} title="Delete Award" message={`Delete "${deleteAward?.title}"?`} confirmLabel="Delete" danger />
+      <ConfirmDialog
+        open={!!deleteAward}
+        onClose={() => setDeleteAward(null)}
+        onConfirm={() => deleteAward && deleteMutation.mutate(deleteAward.id)}
+        title="Delete Award"
+        message={`Delete "${deleteAward?.title}"? This cannot be undone.`}
+        confirmLabel="Delete"
+        danger
+      />
 
-      {/* Grant Award Modal */}
-      <Modal open={!!grantAward} onClose={() => setGrantAward(null)} title={`Grant "${grantAward?.title}"`} footer={
-        <>
-          <button onClick={() => setGrantAward(null)} className="px-4 py-2 text-sm border border-border hover:bg-accent">Cancel</button>
-          <button onClick={() => { if (!grantUserId.trim()) { toast.error("User ID required"); return; } toast.success(`Award granted to ${grantUserId}`); setGrantAward(null); }} className="px-4 py-2 text-sm bg-primary text-primary-foreground hover:opacity-90">Grant</button>
-        </>
-      }>
-        <div>
-          <label className="block text-xs font-medium uppercase tracking-wide mb-1.5">User ID</label>
-          <input value={grantUserId} onChange={(e) => setGrantUserId(e.target.value)} placeholder="Enter user ID" className="w-full border border-input bg-background px-3 py-2 text-sm font-mono focus:outline-none focus:ring-1 focus:ring-ring" />
-        </div>
+      <Modal
+        open={!!grantAward}
+        onClose={() => setGrantAward(null)}
+        title={`Grant "${grantAward?.title}"`}
+        footer={
+          <>
+            <button
+              onClick={() => setGrantAward(null)}
+              className="px-4 py-2 text-sm border border-border hover:bg-accent"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleGrant}
+              disabled={grantMutation.isPending}
+              className="px-4 py-2 text-sm bg-primary text-primary-foreground hover:opacity-90 disabled:opacity-50"
+            >
+              {grantMutation.isPending ? "Granting..." : "Grant Award"}
+            </button>
+          </>
+        }
+      >
+          <div>
+            <label className="block text-xs font-medium uppercase tracking-wide mb-1.5">User ID (UUID)</label>
+            <input
+              value={grantUserId}
+              onChange={(e) => setGrantUserId(e.target.value)}
+              placeholder="550e8400-e29b-41d4-a716-446655440000"
+              className="w-full border border-input bg-background px-3 py-2 text-sm font-mono focus:outline-none focus:ring-1 focus:ring-ring"
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-medium uppercase tracking-wide mb-1.5">Reason for Award</label>
+            <textarea
+              value={grantReason}
+              onChange={(e) => setGrantReason(e.target.value)}
+              placeholder="Outstanding contribution to the April challenge."
+              rows={3}
+              className="w-full border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-ring resize-none"
+            />
+            <p className="text-[10px] text-muted-foreground mt-2 italic">
+              This reason will be visible to the user in their achievements gallery.
+            </p>
+          </div>
       </Modal>
     </div>
   );

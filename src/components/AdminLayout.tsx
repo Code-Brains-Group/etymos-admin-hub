@@ -7,21 +7,19 @@ import {
   Award,
   Trophy,
   Globe,
-  Settings,
   LogOut,
 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useState } from "react";
-import { SettingsModal } from "@/components/SettingsModal";
 
 const navItems = [
-  { label: "Dashboard", path: "/dashboard", icon: LayoutDashboard },
-  { label: "Users", path: "/users", icon: Users },
-  { label: "Categories", path: "/categories", icon: FolderOpen },
-  { label: "Special Quizzes", path: "/quizzes", icon: Puzzle },
-  { label: "Awards", path: "/awards", icon: Award },
-  { label: "Competitions", path: "/competitions", icon: Trophy },
-  { label: "Leaderboard", path: "/leaderboard", icon: Globe },
+  { label: "Dashboard",      path: "/dashboard",   icon: LayoutDashboard },
+  { label: "Users",          path: "/users",        icon: Users },
+  { label: "Categories",     path: "/categories",   icon: FolderOpen },
+  { label: "Competitions",   path: "/competitions", icon: Trophy },
+  { label: "Special Quizzes",path: "/quizzes",      icon: Puzzle },
+  { label: "Awards",         path: "/awards",       icon: Award },
+  { label: "Leaderboard",    path: "/leaderboard",  icon: Globe },
 ];
 
 const pageTitles: Record<string, string> = {
@@ -38,7 +36,6 @@ export default function AdminLayout() {
   const { adminName, logout } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
-  const [settingsOpen, setSettingsOpen] = useState(false);
 
   const initials = adminName
     .split(" ")
@@ -79,13 +76,7 @@ export default function AdminLayout() {
         </nav>
 
         <div className="p-4 border-t border-sidebar-border space-y-3">
-          <button
-            onClick={() => setSettingsOpen(true)}
-            className="w-full flex items-center gap-3 px-3 py-2 text-sm text-sidebar-muted hover:text-sidebar-foreground transition-colors"
-          >
-            <Settings className="h-4 w-4" />
-            <span>Settings</span>
-          </button>
+
           <div className="flex items-center gap-3 px-3">
             <div className="h-8 w-8 bg-sidebar-accent text-sidebar-foreground flex items-center justify-center text-xs font-mono font-medium">
               {initials}
@@ -122,8 +113,6 @@ export default function AdminLayout() {
           <Outlet />
         </main>
       </div>
-
-      <SettingsModal open={settingsOpen} onClose={() => setSettingsOpen(false)} />
     </div>
   );
 }
