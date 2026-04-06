@@ -17,7 +17,7 @@ interface AuthContextType {
   api: ReturnType<typeof createApi>;
 }
 
-const DEFAULT_BASE_URL = "https://irreplaceable-uncheery-esteban.ngrok-free.dev";
+const DEFAULT_BASE_URL = "/api";
 
 const AuthContext = createContext<AuthContextType | null>(null);
 

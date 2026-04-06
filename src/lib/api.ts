@@ -199,14 +199,22 @@ async function request<T>(
   body?: unknown
 ): Promise<T> {
   const headers: Record<string, string> = {
-    "Content-Type": "application/json",
+    // Required to bypass the ngrok landing page which often causes CORS/parsing issues in browsers
+    "ngrok-skip-browser-warning": "true",
   };
+
+  // Only set application/json if not using FormData
+  const isFormData = body instanceof FormData;
+  if (!isFormData) {
+    headers["Content-Type"] = "application/json";
+  }
+
   if (token) headers["Authorization"] = `Bearer ${token}`;
 
   const res = await fetch(`${baseUrl}${path}`, {
     method,
     headers,
-    body: body !== undefined ? JSON.stringify(body) : undefined,
+    body: isFormData ? (body as FormData) : (body !== undefined ? JSON.stringify(body) : undefined),
   });
 
   let json: unknown;
