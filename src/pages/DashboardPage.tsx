@@ -566,8 +566,8 @@ export default function DashboardPage() {
                     <td className="px-5 py-3 font-semibold text-primary">{a.award_title}</td>
                     <td className="px-5 py-3">
                       <div className="flex flex-col">
-                        <span className="font-medium">{a.full_name}</span>
-                        <span className="text-[10px] text-muted-foreground">{a.email}</span>
+                        <span className="font-medium">{a.user_full_name}</span>
+                        <span className="text-[10px] text-muted-foreground">{a.user_email}</span>
                       </div>
                     </td>
                     <td className="px-5 py-3 font-mono text-muted-foreground">{formatDate(a.granted_at)}</td>

@@ -5,7 +5,7 @@ import { Modal } from "@/components/shared/Modal";
 import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
 import { LoadingSkeleton } from "@/components/shared/LoadingSkeleton";
 import { toast } from "sonner";
-import { Pencil, Trash2, Gift } from "lucide-react";
+import { Pencil, Trash2, Gift, Activity as ActivityIcon } from "lucide-react";
 import type { Award } from "@/lib/api";
 import { DataPagination } from "@/components/shared/DataPagination";
 
@@ -22,6 +22,7 @@ export default function AwardsPage() {
   const [grantUserId, setGrantUserId] = useState("");
   const [grantReason, setGrantReason] = useState("");
   const [page, setPage] = useState(1);
+  const [viewAwardId, setViewAwardId] = useState<number | null>(null);
 
   const [formTitle, setFormTitle] = useState("");
   const [formDesc, setFormDesc] = useState("");
@@ -44,6 +45,12 @@ export default function AwardsPage() {
     queryFn: () => api.adminCompetitions.list(1, 100),
   });
   const competitions = competitionsData?.items || [];
+
+  const { data: awardDetail, isLoading: isLoadingDetail } = useQuery({
+    queryKey: ["admin-award-detail", viewAwardId],
+    queryFn: () => api.adminAwards.getDetails(viewAwardId!),
+    enabled: !!viewAwardId,
+  });
 
   const invalidate = () => qc.invalidateQueries({ queryKey: ["admin-awards"] });
 
@@ -110,7 +117,7 @@ export default function AwardsPage() {
       description: formDesc,
       icon_url: formIcon,
       points_required: formPoints,
-      competition_id: formCompId || undefined,
+      competition_id: formCompId || null,
     };
     if (isNew) {
       createMutation.mutate(payload);
@@ -174,6 +181,13 @@ export default function AwardsPage() {
                       {(a.points_required ?? 0).toLocaleString()} pts
                     </span>
                     <div className="flex gap-2">
+                      <button
+                        onClick={() => setViewAwardId(a.id)}
+                        className="p-1.5 border border-border hover:bg-accent transition-colors"
+                        title="View recipients"
+                      >
+                        <ActivityIcon className="h-3.5 w-3.5" />
+                      </button>
                       <button
                         onClick={() => { setGrantAward(a); setGrantUserId(""); setGrantReason(""); }}
                         className="p-1.5 border border-border hover:bg-accent transition-colors"
@@ -349,6 +363,83 @@ export default function AwardsPage() {
               This reason will be visible to the user in their achievements gallery.
             </p>
           </div>
+      </Modal>
+
+      <Modal
+        open={!!viewAwardId}
+        onClose={() => setViewAwardId(null)}
+        title="Award Intelligence & Recipients"
+        size="lg"
+      >
+        {isLoadingDetail ? (
+          <div className="space-y-4">
+            <LoadingSkeleton className="h-20 w-full" />
+            <LoadingSkeleton className="h-40 w-full" />
+          </div>
+        ) : awardDetail ? (
+          <div className="space-y-6">
+            <div className="flex gap-6 items-start">
+              <div className="h-20 w-20 bg-muted flex items-center justify-center border border-border">
+                {awardDetail.icon_url ? (
+                  <img src={awardDetail.icon_url} alt="" className="h-16 w-16 object-contain" />
+                ) : (
+                  <span className="text-3xl">🏅</span>
+                )}
+              </div>
+              <div className="flex-1">
+                <h3 className="text-xl font-bold">{awardDetail.title}</h3>
+                <p className="text-sm text-muted-foreground mt-1">{awardDetail.description}</p>
+                <div className="flex gap-3 mt-3">
+                  <span className="text-[10px] font-bold uppercase tracking-widest bg-muted px-2 py-1 border border-border">
+                    {awardDetail.points_required.toLocaleString()} pts required
+                  </span>
+                  {awardDetail.competition_title && (
+                    <span className="text-[10px] font-bold uppercase tracking-widest bg-primary/10 text-primary px-2 py-1 border border-primary/20">
+                      Linked: {awardDetail.competition_title}
+                    </span>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            <div className="pt-6 border-t border-border">
+              <h4 className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground mb-4 flex justify-between items-center">
+                <span>Award Recipients ({awardDetail.recipients.length})</span>
+                <span className="font-mono bg-muted px-1.5 py-0.5 border border-border">Created: {new Date(awardDetail.created_at).toLocaleDateString()}</span>
+              </h4>
+              <div className="border border-border max-h-[400px] overflow-y-auto">
+                <table className="w-full text-xs text-left">
+                  <thead className="bg-muted/50 border-b border-border text-[10px] uppercase font-bold text-muted-foreground sticky top-0">
+                    <tr>
+                      <th className="px-4 py-2">User Name</th>
+                      <th className="px-4 py-2">Email Identity</th>
+                      <th className="px-4 py-2">Date Granted</th>
+                      <th className="px-4 py-2">Reason</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-border">
+                    {awardDetail.recipients.length === 0 ? (
+                      <tr>
+                        <td colSpan={4} className="px-4 py-8 text-center text-muted-foreground italic">No users have earned this award yet.</td>
+                      </tr>
+                    ) : (
+                      awardDetail.recipients.map(r => (
+                        <tr key={r.user_id} className="hover:bg-muted/10 transition-colors">
+                          <td className="px-4 py-3 font-semibold">{r.full_name}</td>
+                          <td className="px-4 py-3 font-mono text-muted-foreground">{r.email}</td>
+                          <td className="px-4 py-3 text-muted-foreground">{new Date(r.granted_at).toLocaleDateString()}</td>
+                          <td className="px-4 py-3 italic text-muted-foreground truncate max-w-[200px]" title={r.reason || ""}>
+                            {r.reason ? `"${r.reason}"` : "—"}
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        ) : null}
       </Modal>
     </div>
   );

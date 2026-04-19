@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/contexts/AuthContext";
 import { StatusBadge } from "@/components/shared/StatusBadge";
@@ -17,12 +17,13 @@ const PAGE_SIZE = 25;
 export default function UsersPage() {
   const { api } = useAuth();
   const qc = useQueryClient();
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [page, setPage] = useState(1);
   const [viewUserId, setViewUserId] = useState<string | null>(null);
-  const [detailTab, setDetailTab] = useState<"profile" | "activity">("profile");
+  const [detailTab, setDetailTab] = useState<"profile" | "activity" | "awards" | "competitions">("profile");
   const [activityPage, setActivityPage] = useState(1);
   const [grantToUser, setGrantToUser] = useState<{ id: string; name: string } | null>(null);
   const [grantAwardId, setGrantAwardId] = useState<number | "">("");
@@ -31,6 +32,7 @@ export default function UsersPage() {
     user: User;
     action: "ban" | "unban" | "admin" | "delete";
   } | null>(null);
+  const [migrationPreview, setMigrationPreview] = useState<{ file: File; users: any[] } | null>(null);
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -121,6 +123,17 @@ export default function UsersPage() {
     onError: (e: Error) => toast.error(e.message),
   });
 
+  const migrateMutation = useMutation({
+    mutationFn: (file: File) => api.admin.migrateUsers(file),
+    onSuccess: () => {
+      toast.success("Legacy users migrated successfully");
+      invalidate();
+      qc.invalidateQueries({ queryKey: ["admin-activities"] });
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
   const handleConfirm = () => {
     if (!confirm) return;
     if (confirm.action === "ban") banMutation.mutate(confirm.user.id);
@@ -135,7 +148,42 @@ export default function UsersPage() {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <div />
+        <div>
+          <input
+            type="file"
+            accept=".json"
+            ref={fileInputRef}
+            className="hidden"
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              if (file) {
+                const reader = new FileReader();
+                reader.onload = (event) => {
+                  try {
+                    const json = JSON.parse(event.target?.result as string);
+                    if (json && Array.isArray(json.users)) {
+                      setMigrationPreview({ file, users: json.users });
+                    } else {
+                      toast.error("Invalid file format. Expected a JSON object with a 'users' array.");
+                      e.target.value = "";
+                    }
+                  } catch (err) {
+                    toast.error("Failed to parse JSON file.");
+                    e.target.value = "";
+                  }
+                };
+                reader.readAsText(file);
+              }
+            }}
+          />
+          <button
+            onClick={() => fileInputRef.current?.click()}
+            disabled={migrateMutation.isPending}
+            className="px-4 py-2 text-sm bg-primary text-primary-foreground font-bold uppercase tracking-widest hover:opacity-90 disabled:opacity-50"
+          >
+            {migrateMutation.isPending ? "Migrating..." : "Migrate Legacy Users"}
+          </button>
+        </div>
         <div className="relative">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <input
@@ -306,6 +354,22 @@ export default function UsersPage() {
           >
             Activity History
           </button>
+          <button
+            onClick={() => setDetailTab("awards")}
+            className={`px-4 py-2 text-xs font-bold uppercase tracking-widest transition-colors ${
+              detailTab === "awards" ? "border-b-2 border-primary text-primary" : "text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            Awards
+          </button>
+          <button
+            onClick={() => setDetailTab("competitions")}
+            className={`px-4 py-2 text-xs font-bold uppercase tracking-widest transition-colors ${
+              detailTab === "competitions" ? "border-b-2 border-primary text-primary" : "text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            Competitions
+          </button>
         </div>
 
         {detailTab === "profile" && (
@@ -440,6 +504,90 @@ export default function UsersPage() {
             )}
           </div>
         )}
+
+        {detailTab === "awards" && (
+          <div className="space-y-4">
+            <h4 className="text-[10px] font-bold uppercase tracking-tighter text-muted-foreground flex items-center gap-2">
+               <Gift className="h-3 w-3" /> Earned Awards Repository
+            </h4>
+            <div className="border border-border">
+              <table className="w-full text-xs text-left">
+                <thead className="bg-muted/50 border-b border-border text-[10px] uppercase font-bold text-muted-foreground">
+                  <tr>
+                    <th className="px-4 py-2 w-12 text-center">Icon</th>
+                    <th className="px-4 py-2">Award Title</th>
+                    <th className="px-4 py-2">Date Earned</th>
+                    <th className="px-4 py-2">Grant Reason</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border">
+                  {!viewUser?.awards?.length ? (
+                    <tr>
+                      <td colSpan={4} className="px-4 py-10 text-center text-muted-foreground italic">No awards earned by this user.</td>
+                    </tr>
+                  ) : (
+                    viewUser.awards.map(ua => (
+                      <tr key={ua.id} className="hover:bg-muted/10 transition-colors">
+                        <td className="px-4 py-3">
+                          <div className="h-10 w-10 flex items-center justify-center bg-muted/50 border border-border">
+                            {ua.award_icon_url ? (
+                              <img src={ua.award_icon_url} alt="" className="h-8 w-8 object-contain" />
+                            ) : (
+                              <span className="text-xl">🏅</span>
+                            )}
+                          </div>
+                        </td>
+                        <td className="px-4 py-3 font-semibold">{ua.award_title}</td>
+                        <td className="px-4 py-3 font-mono text-muted-foreground">{formatDate(ua.granted_at)}</td>
+                        <td className="px-4 py-3 text-muted-foreground italic truncate max-w-xs" title={ua.reason || ""}>
+                           {ua.reason ? `"${ua.reason}"` : "—"}
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {detailTab === "competitions" && (
+          <div className="space-y-4">
+             <h4 className="text-[10px] font-bold uppercase tracking-tighter text-muted-foreground flex items-center gap-2">
+               <ActivityIcon className="h-3 w-3" /> Competition Participation History
+            </h4>
+            <div className="border border-border">
+              <table className="w-full text-xs text-left">
+                <thead className="bg-muted/50 border-b border-border text-[10px] uppercase font-bold text-muted-foreground">
+                  <tr>
+                    <th className="px-4 py-2">Competition Event</th>
+                    <th className="px-4 py-2">Final Score</th>
+                    <th className="px-4 py-2 text-right">Joined Date</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border">
+                  {!viewUser?.competitions?.length ? (
+                    <tr>
+                      <td colSpan={3} className="px-4 py-10 text-center text-muted-foreground italic">No competition participation recorded.</td>
+                    </tr>
+                  ) : (
+                    viewUser.competitions.map(c => (
+                      <tr key={c.competition_id} className="hover:bg-muted/10 transition-colors">
+                        <td className="px-4 py-3 font-semibold text-primary">{c.competition_title}</td>
+                        <td className="px-4 py-3">
+                          <span className="font-mono bg-primary/10 text-primary px-2 py-0.5 border border-primary/20">
+                            {c.score.toLocaleString()} points
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 text-right font-mono text-muted-foreground">{formatDate(c.joined_at)}</td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
       </Modal>
 
       {/* Confirm Dialog */}
@@ -540,6 +688,77 @@ export default function UsersPage() {
           </div>
         </div>
       )}
+
+      {/* Migration Preview Modal */}
+      <Modal
+        open={!!migrationPreview}
+        onClose={() => {
+          setMigrationPreview(null);
+          if (fileInputRef.current) fileInputRef.current.value = "";
+        }}
+        title={`Preview Migration (${migrationPreview?.users.length || 0} Users)`}
+        size="lg"
+        footer={
+          <div className="flex gap-2">
+            <button
+              onClick={() => {
+                setMigrationPreview(null);
+                if (fileInputRef.current) fileInputRef.current.value = "";
+              }}
+              className="px-4 py-2 text-sm border border-border hover:bg-accent"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={() => {
+                if (migrationPreview) {
+                  migrateMutation.mutate(migrationPreview.file);
+                  setMigrationPreview(null);
+                }
+              }}
+              disabled={migrateMutation.isPending}
+              className="px-4 py-2 text-sm bg-primary text-primary-foreground hover:opacity-90 disabled:opacity-50"
+            >
+              Confirm & Import
+            </button>
+          </div>
+        }
+      >
+        <div className="space-y-4">
+          <p className="text-sm text-muted-foreground">
+            Please review the first few users from the payload before applying the permanent migration.
+          </p>
+          <div className="border border-border max-h-[400px] overflow-y-auto">
+            <table className="w-full text-xs text-left">
+              <thead className="bg-muted/50 border-b border-border text-[10px] uppercase font-bold text-muted-foreground sticky top-0">
+                <tr>
+                  <th className="px-4 py-2">Name</th>
+                  <th className="px-4 py-2">Email</th>
+                  <th className="px-4 py-2">Google ID</th>
+                  <th className="px-4 py-2 text-center">Is Admin</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border">
+                {migrationPreview?.users.slice(0, 50).map((u, i) => (
+                  <tr key={i} className="hover:bg-muted/10 transition-colors">
+                    <td className="px-4 py-2 font-medium">{u.name || u.full_name || "N/A"}</td>
+                    <td className="px-4 py-2 text-muted-foreground font-mono">{u.email}</td>
+                    <td className="px-4 py-2 text-muted-foreground font-mono text-[10px]">{u.google_id || "—"}</td>
+                    <td className="px-4 py-2 text-center">
+                      {u.is_admin ? <StatusBadge variant="admin">Yes</StatusBadge> : "No"}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          {migrationPreview && migrationPreview.users.length > 50 && (
+            <p className="text-xs text-muted-foreground text-center pt-2 italic">
+              Showing first 50 of {migrationPreview.users.length} users.
+            </p>
+          )}
+        </div>
+      </Modal>
     </div>
   );
 }

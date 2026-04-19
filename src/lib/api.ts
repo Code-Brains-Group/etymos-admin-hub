@@ -38,6 +38,27 @@ export interface User {
   created_at: string;
 }
 
+export interface UserAwardHistory {
+  id: string;
+  award_id: number;
+  award_title: string;
+  award_icon_url: string | null;
+  granted_at: string;
+  reason: string | null;
+}
+
+export interface UserCompetitionHistory {
+  competition_id: string;
+  competition_title: string;
+  score: number;
+  joined_at: string;
+}
+
+export interface UserDetail extends User {
+  awards: UserAwardHistory[];
+  competitions: UserCompetitionHistory[];
+}
+
 export interface LoginResponse {
   access_token: string;
   refresh_token: string;
@@ -117,6 +138,19 @@ export interface Award {
   points_required: number;
   competition_id?: string;
   competition_title?: string;
+}
+
+export interface AwardRecipient {
+  user_id: string;
+  full_name: string;
+  email: string;
+  granted_at: string;
+  reason: string | null;
+}
+
+export interface AwardDetail extends Award {
+  recipients: AwardRecipient[];
+  created_at: string;
 }
 
 export interface Competition {
@@ -299,7 +333,7 @@ export function createApi(baseUrl: string, token?: string | null) {
         return r<PagedResponse<User>>(`/admin/users?${q.toString()}`, "GET");
       },
       getUser: (userId: string) =>
-        r<User>(`/admin/users/${userId}`, "GET"),
+        r<UserDetail>(`/admin/users/${userId}`, "GET"),
       deleteUser: (userId: string) =>
         r<Record<string, never>>(`/admin/users/${userId}`, "DELETE"),
 
@@ -311,6 +345,12 @@ export function createApi(baseUrl: string, token?: string | null) {
 
       makeAdmin: (userId: string) =>
         r<Record<string, never>>(`/admin/users/${userId}/make-admin`, "PUT"),
+
+      migrateUsers: (file: File) => {
+        const formData = new FormData();
+        formData.append("document_file", file);
+        return r<Record<string, never>>("/admin/migrate-users", "POST", formData);
+      },
     },
 
     // ── Section 3: Admin — Categories ───────────────────────
@@ -415,7 +455,7 @@ export function createApi(baseUrl: string, token?: string | null) {
         description: string;
         icon_url: string;
         points_required: number;
-        competition_id?: string;
+        competition_id?: string | null;
       }) => r<Record<string, never>>("/admin/awards", "POST", payload),
 
       update: (
@@ -445,12 +485,14 @@ export function createApi(baseUrl: string, token?: string | null) {
         return r<PagedResponse<{
           id: string;
           award_title: string;
-          full_name: string;
-          email: string;
+          user_full_name: string;
+          user_email: string;
           granted_at: string;
           reason: string;
         }>>(`/admin/awards/recent?${q.toString()}`, "GET");
       },
+      getDetails: (award_id: number) => 
+        r<AwardDetail>(`/admin/awards/${award_id}`, "GET"),
     },
 
     // ── Section 6: Admin — Competitions ─────────────────────
