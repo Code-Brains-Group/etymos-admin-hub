@@ -11,7 +11,7 @@ export default defineConfig(({ mode }) => ({
     },
     proxy: {
       "/api": {
-        target: "https://irreplaceable-uncheery-esteban.ngrok-free.dev",
+        target: "https://etymos-fast-api-backend.onrender.com/",
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/api/, ""),
       },
