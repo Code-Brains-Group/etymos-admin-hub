@@ -3,4 +3,3 @@
   to = "https://irreplaceable-uncheery-esteban.ngrok-free.dev/:splat"
   status = 200
   force = true
-  headers = { "ngrok-skip-browser-warning" = "true" }

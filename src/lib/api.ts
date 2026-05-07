@@ -232,10 +232,7 @@ async function request<T>(
   token?: string | null,
   body?: unknown
 ): Promise<T> {
-  const headers: Record<string, string> = {
-    // Required to bypass the ngrok landing page which often causes CORS/parsing issues in browsers
-    "ngrok-skip-browser-warning": "true",
-  };
+  const headers: Record<string, string> = {};
 
   // Only set application/json if not using FormData
   const isFormData = body instanceof FormData;
