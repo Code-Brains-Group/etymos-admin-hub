@@ -232,7 +232,9 @@ async function request<T>(
   token?: string | null,
   body?: unknown
 ): Promise<T> {
-  const headers: Record<string, string> = {};
+  const headers: Record<string, string> = {
+    "ngrok-skip-browser-warning": "true",
+  };
 
   // Only set application/json if not using FormData
   const isFormData = body instanceof FormData;
