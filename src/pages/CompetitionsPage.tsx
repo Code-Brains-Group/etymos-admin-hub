@@ -344,7 +344,7 @@ export default function CompetitionsPage() {
                             Announce
                           </button>
                         )}
-                        {status !== "ended" && (
+                        {status !== "ended" && !c.has_quizzes && (
                           <button
                             onClick={() => setGenerateQuizComp(c)}
                             className="px-2 py-1 text-[10px] uppercase tracking-wider font-semibold bg-primary text-primary-foreground hover:opacity-90 transition-opacity"
