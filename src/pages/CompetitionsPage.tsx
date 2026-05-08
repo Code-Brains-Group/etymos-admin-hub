@@ -711,26 +711,7 @@ export default function CompetitionsPage() {
             ) : (
               <div className="py-12 text-center text-muted-foreground">Failed to load analytics.</div>
             )}
-            
-            {/* Winner Reveal for Past Competitions */}
-            {compDetail?.status === "past" && participants.length > 0 && (
-              <div className="border-t border-border pt-6">
-                <h4 className="text-sm font-semibold uppercase tracking-wider mb-4 text-center">🏆 Hall of Fame</h4>
-                <div className="bg-primary/5 border border-primary/20 p-6 rounded-lg text-center space-y-3">
-                  <div className="text-4xl">👑</div>
-                  <div className="space-y-1">
-                    <p className="text-xs uppercase tracking-widest text-muted-foreground font-bold">Winner</p>
-                    <p className="text-2xl font-display font-bold text-primary">{participants[0].full_name}</p>
-                    <p className="text-xs text-muted-foreground">{participants[0].email}</p>
-                  </div>
-                  <div className="pt-2">
-                    <span className="bg-primary text-primary-foreground px-4 py-1 rounded-full text-sm font-mono font-bold">
-                      {participants[0].score.toLocaleString()} PTS
-                    </span>
-                  </div>
-                </div>
-              </div>
-            )}
+
           </div>
         )}
 
