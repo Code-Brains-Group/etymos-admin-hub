@@ -313,16 +313,9 @@ export default function CompetitionsPage() {
                         {c.participant_count?.toLocaleString() ?? 0}
                       </td>
                       <td className="px-4 py-3">
-                        <div className="flex flex-col gap-1">
-                          <StatusBadge variant={c.status === "past" ? "ended" : c.status}>
+                        <StatusBadge variant={c.status === "past" ? "ended" : c.status}>
                             {c.status.toUpperCase()}
                           </StatusBadge>
-                          {c.status === "past" && !c.is_processed && (
-                            <span className="text-[8px] font-bold bg-amber-500 text-white px-1 py-0.5 border border-amber-600 self-start animate-pulse">
-                              PENDING WINNERS
-                            </span>
-                          )}
-                        </div>
                       </td>
                       <td className="px-4 py-3 flex flex-wrap items-center gap-2">
                         <button
@@ -711,7 +704,26 @@ export default function CompetitionsPage() {
             ) : (
               <div className="py-12 text-center text-muted-foreground">Failed to load analytics.</div>
             )}
-
+            
+            {/* Winner Reveal for Past Competitions */}
+            {compDetail?.status === "past" && participants.length > 0 && (
+              <div className="border-t border-border pt-6">
+                <h4 className="text-sm font-semibold uppercase tracking-wider mb-4 text-center">🏆 Hall of Fame</h4>
+                <div className="bg-primary/5 border border-primary/20 p-6 rounded-lg text-center space-y-3">
+                  <div className="text-4xl">👑</div>
+                  <div className="space-y-1">
+                    <p className="text-xs uppercase tracking-widest text-muted-foreground font-bold">Winner</p>
+                    <p className="text-2xl font-display font-bold text-primary">{participants[0].full_name}</p>
+                    <p className="text-xs text-muted-foreground">{participants[0].email}</p>
+                  </div>
+                  <div className="pt-2">
+                    <span className="bg-primary text-primary-foreground px-4 py-1 rounded-full text-sm font-mono font-bold">
+                      {participants[0].score.toLocaleString()} PTS
+                    </span>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         )}
 
