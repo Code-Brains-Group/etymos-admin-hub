@@ -11,7 +11,7 @@ export default defineConfig(({ mode }) => ({
     },
     proxy: {
       "/api": {
-        target: "https://irreplaceable-uncheery-esteban.ngrok-free.dev/",
+        target: "http://139.84.236.155:8000/",
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/api/, ""),
       },
