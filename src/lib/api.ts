@@ -162,7 +162,6 @@ export interface Competition {
   prize_details: string;
   is_active: boolean;
   is_processed: boolean;
-  has_quizzes: boolean;
   status?: "active" | "upcoming" | "past";
   participant_count?: number;
   created_at: string;
