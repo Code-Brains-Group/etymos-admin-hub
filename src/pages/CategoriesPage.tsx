@@ -163,9 +163,14 @@ export default function CategoriesPage() {
                 <div className="p-4 flex-1 flex flex-col">
                   <div className="flex items-center justify-between mb-2">
                     <h3 className="font-bold text-lg leading-none">{cat.title}</h3>
-                    {cat.is_active === false && (
-                      <span className="text-[9px] font-bold bg-muted text-muted-foreground px-1.5 py-0.5 border border-border">DISABLED</span>
-                    )}
+                    <div className="flex gap-2">
+                      {cat.word_count !== undefined && cat.word_count < 20 && (
+                        <span className="text-[9px] font-bold bg-amber-500/10 text-amber-600 px-1.5 py-0.5 border border-amber-500/20" title="Low words: API will fall back to full dictionary">⚠️ LOW WORDS</span>
+                      )}
+                      {cat.is_active === false && (
+                        <span className="text-[9px] font-bold bg-muted text-muted-foreground px-1.5 py-0.5 border border-border">DISABLED</span>
+                      )}
+                    </div>
                   </div>
                   <p className="text-sm text-muted-foreground line-clamp-2 flex-1 mb-4 italic">
                     {cat.description || "No description provided."}
@@ -176,7 +181,7 @@ export default function CategoriesPage() {
                         onClick={() => { setWordsCat(cat); setWordsPage(1); }}
                         className="px-2 py-1 text-[10px] uppercase tracking-wider font-semibold border border-border hover:bg-accent transition-colors"
                       >
-                        Words
+                        Pre-categorize Words
                       </button>
                       <button
                         onClick={() => openEdit(cat)}
@@ -275,6 +280,9 @@ export default function CategoriesPage() {
         size="lg"
       >
         <div className="space-y-6">
+          <div className="bg-primary/10 border border-primary/20 p-3 text-xs text-primary rounded">
+            <strong>Tip:</strong> It is recommended to pre-categorize words for this category before launching campaigns or special quizzes. This ensures the AI has a robust, curated dictionary to draw from instead of falling back to the entire generic dictionary.
+          </div>
           <div className="bg-muted p-4 border border-border">
             <label className="block text-xs font-bold uppercase tracking-widest mb-2 text-muted-foreground">Add New Words (Comma separated)</label>
             <div className="flex gap-2">

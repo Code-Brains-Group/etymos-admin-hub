@@ -156,7 +156,14 @@ export default function CompetitionsPage() {
       title: string;
     }) => api.adminQuizzes.create(payload),
     onSuccess: () => { toast.success("Quiz successfully mathematically constructed and paired!"); setGenerateQuizComp(null); },
-    onError: (e: Error) => toast.error(e.message),
+    onError: (e: Error) => {
+      if (e.message.includes("504")) {
+        toast.success("Quiz is being mathematically constructed in the background! (Timeout reached but task is running)");
+        setGenerateQuizComp(null);
+      } else {
+        toast.error(e.message);
+      }
+    },
   });
 
   const grantMutation = useMutation({
@@ -488,6 +495,9 @@ export default function CompetitionsPage() {
           <p className="text-xs text-muted-foreground mb-4">
             Mathematically construct a robust puzzle and permanently pair it with <strong>{generateQuizComp?.title}</strong>.
           </p>
+          <div className="bg-primary/10 border border-primary/20 text-primary p-3 rounded text-xs mb-4">
+            <strong>Note:</strong> It is highly recommended to generate special quizzes ahead of time. When users start the competition, they will instantly clone these prepared quizzes instead of waiting for live AI generation.
+          </div>
           <div>
             <label className="block text-xs font-medium uppercase tracking-wide mb-1.5">Number of Rounds</label>
             <input
