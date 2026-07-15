@@ -59,6 +59,25 @@ export interface UserDetail extends User {
   competitions: UserCompetitionHistory[];
 }
 
+export interface ManagedAvatar {
+  id: number;
+  name: string;
+  image_url: string;
+  is_active: boolean;
+  is_default: boolean;
+  sort_order: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ManagedAvatarPayload {
+  name?: string;
+  image_url?: string;
+  is_active?: boolean;
+  is_default?: boolean;
+  sort_order?: number;
+}
+
 export interface LoginResponse {
   access_token: string;
   refresh_token: string;
@@ -92,17 +111,51 @@ export interface Category {
   title: string;
   description: string;
   image_url: string | null;
+  matching_instructions?: string | null;
+  source_category_hints?: string[];
+  example_words?: string[];
+  enrichment_status?:
+    | "pending"
+    | "enriching"
+    | "ready"
+    | "retrying"
+    | "failed"
+    | "needs_guidance";
+  visibility?: "public" | "private";
   is_active?: boolean;
   created_at?: string;
+  updated_at?: string;
   word_count?: number;
+  sample_words?: string[];
+}
+
+export interface CategoryDetail extends Category {
+  approved_word_count?: number;
+  suggested_word_count?: number;
+}
+
+export interface CategoryWordItem {
+  word: string;
+  source?: string | null;
+  confidence?: number | null;
+  reason?: string | null;
 }
 
 export interface CategoryWords {
   category_id: number;
-  words: string[];
+  title?: string;
+  words?: string[];
+  items?: CategoryWordItem[];
   total: number;
   page: number;
   limit: number;
+}
+
+export interface CategorySuggestionItem {
+  word: string;
+  meaning?: string | null;
+  confidence?: number | null;
+  reason?: string | null;
 }
 
 export interface SpecialQuiz {
@@ -207,7 +260,10 @@ export interface LeaderboardData {
 }
 
 // ── Analytics Types ─────────────────────────────────────
-export interface TimeSeriesPoint { date: string; value: number; }
+export interface TimeSeriesPoint {
+  date: string;
+  value: number;
+}
 
 export interface AnalyticsData {
   user_growth: TimeSeriesPoint[];
@@ -216,7 +272,12 @@ export interface AnalyticsData {
   quiz_status_dist: { in_progress: number; completed: number };
   activity_over_time: Record<string, TimeSeriesPoint[]>;
   activity_type_dist: Record<string, number>;
-  competition_performance: { competition_id: string; title: string; participants: number; avg_score: number }[];
+  competition_performance: {
+    competition_id: string;
+    title: string;
+    participants: number;
+    avg_score: number;
+  }[];
   top_words_searched: { word: string; count: number }[];
   word_searches_over_time: TimeSeriesPoint[];
 }
@@ -230,8 +291,9 @@ async function request<T>(
   path: string,
   method: RequestMethod,
   token?: string | null,
-  body?: unknown
+  body?: unknown,
 ): Promise<T> {
+  const normalizedBaseUrl = baseUrl.replace(/\/$/, "");
   const headers: Record<string, string> = {
     "ngrok-skip-browser-warning": "true",
   };
@@ -244,25 +306,43 @@ async function request<T>(
 
   if (token) headers["Authorization"] = `Bearer ${token}`;
 
-  const res = await fetch(`${baseUrl}${path}`, {
+  const res = await fetch(`${normalizedBaseUrl}${path}`, {
     method,
     headers,
-    body: isFormData ? (body as FormData) : (body !== undefined ? JSON.stringify(body) : undefined),
+    body: isFormData
+      ? (body as FormData)
+      : body !== undefined
+        ? JSON.stringify(body)
+        : undefined,
   });
 
   let json: unknown;
   try {
-    json = await res.json();
+    const text = await res.text();
+    json = text ? JSON.parse(text) : null;
   } catch {
-    throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+    json = null;
   }
 
   if (!res.ok) {
     const err = json as ApiError;
-    throw new Error(err?.message || `HTTP ${res.status}`);
+    const message = err?.message || `HTTP ${res.status}`;
+    const error = new Error(message) as Error & {
+      detail?: string;
+      status?: number;
+      payload?: ApiError | null;
+    };
+    error.detail = err?.detail;
+    error.status = res.status;
+    error.payload = err || null;
+    throw error;
   }
 
-  return (json as ApiEnvelope<T>).data;
+  if (json && typeof json === "object" && "data" in json) {
+    return (json as ApiEnvelope<T>).data as T;
+  }
+
+  return json as T;
 }
 
 // ── API factory — call createApi(baseUrl, token) ────────────────
@@ -308,20 +388,31 @@ export function createApi(baseUrl: string, token?: string | null) {
         if (params?.start_date) q.set("start_date", params.start_date);
         if (params?.end_date) q.set("end_date", params.end_date);
         if (params?.granularity) q.set("granularity", params.granularity);
-        if (params?.category_id) q.set("category_id", String(params.category_id));
+        if (params?.category_id)
+          q.set("category_id", String(params.category_id));
         if (params?.difficulty) q.set("difficulty", params.difficulty);
-        if (params?.competition_id) q.set("competition_id", params.competition_id);
+        if (params?.competition_id)
+          q.set("competition_id", params.competition_id);
         return r<AnalyticsData>(`/admin/analytics?${q.toString()}`, "GET");
       },
 
-      getActivities: (userId?: string, page = 1, limit = 25, startDate?: string, endDate?: string) => {
+      getActivities: (
+        userId?: string,
+        page = 1,
+        limit = 25,
+        startDate?: string,
+        endDate?: string,
+      ) => {
         const q = new URLSearchParams();
         q.set("page", String(page));
         q.set("limit", String(limit));
         if (startDate) q.set("start_date", startDate);
         if (endDate) q.set("end_date", endDate);
         if (userId) q.set("user_id", userId);
-        return r<PagedResponse<Activity>>(`/admin/activities?${q.toString()}`, "GET");
+        return r<PagedResponse<Activity>>(
+          `/admin/activities?${q.toString()}`,
+          "GET",
+        );
       },
 
       listUsers: (page = 1, limit = 25, search?: string) => {
@@ -348,8 +439,34 @@ export function createApi(baseUrl: string, token?: string | null) {
       migrateUsers: (file: File) => {
         const formData = new FormData();
         formData.append("document_file", file);
-        return r<Record<string, never>>("/admin/migrate-users", "POST", formData);
+        return r<Record<string, never>>(
+          "/admin/migrate-users",
+          "POST",
+          formData,
+        );
       },
+    },
+
+    // ── Admin — Managed Avatars ─────────────────────────────
+    adminAvatars: {
+      list: (page = 1, limit = 25) => {
+        const q = new URLSearchParams();
+        q.set("page", String(page));
+        q.set("limit", String(limit));
+        return r<PagedResponse<ManagedAvatar>>(
+          `/admin/avatars?${q.toString()}`,
+          "GET",
+        );
+      },
+
+      create: (payload: Required<ManagedAvatarPayload>) =>
+        r<ManagedAvatar>("/admin/avatars", "POST", payload),
+
+      update: (avatarId: number, payload: ManagedAvatarPayload) =>
+        r<ManagedAvatar>(`/admin/avatars/${avatarId}`, "PUT", payload),
+
+      remove: (avatarId: number) =>
+        r<ManagedAvatar>(`/admin/avatars/${avatarId}`, "DELETE"),
     },
 
     // ── Section 3: Admin — Categories ───────────────────────
@@ -358,13 +475,24 @@ export function createApi(baseUrl: string, token?: string | null) {
         const q = new URLSearchParams();
         q.set("page", String(page));
         q.set("limit", String(limit));
-        return r<PagedResponse<Category>>(`/admin/categories?${q.toString()}`, "GET");
+        return r<PagedResponse<Category>>(
+          `/admin/categories?${q.toString()}`,
+          "GET",
+        );
       },
+
+      getDetail: (categoryId: number) =>
+        r<CategoryDetail>(`/admin/categories/${categoryId}`, "GET"),
 
       create: (payload: {
         title: string;
         description: string;
         image_url?: string | null;
+        matching_instructions?: string | null;
+        source_category_hints?: string[];
+        example_words?: string[];
+        visibility?: "public" | "private";
+        is_active?: boolean;
       }) => r<Category>("/admin/categories", "POST", payload),
 
       update: (
@@ -373,24 +501,48 @@ export function createApi(baseUrl: string, token?: string | null) {
           title?: string;
           description?: string;
           image_url?: string | null;
+          matching_instructions?: string | null;
+          source_category_hints?: string[];
+          example_words?: string[];
+          visibility?: "public" | "private";
           is_active?: boolean;
-        }
+        },
       ) => r<Category>(`/admin/categories/${categoryId}`, "PUT", payload),
 
       delete: (categoryId: number) =>
         r<Record<string, never>>(`/admin/categories/${categoryId}`, "DELETE"),
 
+      listWords: (categoryId: number, page = 1, limit = 50) => {
+        const q = new URLSearchParams();
+        q.set("page", String(page));
+        q.set("limit", String(limit));
+        return r<CategoryWords>(
+          `/admin/categories/${categoryId}/words?${q.toString()}`,
+          "GET",
+        );
+      },
+
+      listWordSuggestions: (categoryId: number, page = 1, limit = 50) => {
+        const q = new URLSearchParams();
+        q.set("page", String(page));
+        q.set("limit", String(limit));
+        return r<PagedResponse<CategorySuggestionItem>>(
+          `/admin/categories/${categoryId}/word-suggestions?${q.toString()}`,
+          "GET",
+        );
+      },
+
       addWords: (categoryId: number, words: string[]) =>
-        r<Record<string, never>>(
+        r<{ added: number; skipped_duplicates: number; invalid: string[] }>(
           `/admin/categories/${categoryId}/words`,
           "POST",
-          { words }
+          { words },
         ),
 
       deleteWord: (categoryId: number, word: string) =>
         r<Record<string, never>>(
           `/admin/categories/${categoryId}/words/${encodeURIComponent(word)}`,
-          "DELETE"
+          "DELETE",
         ),
     },
 
@@ -400,7 +552,10 @@ export function createApi(baseUrl: string, token?: string | null) {
         const q = new URLSearchParams();
         q.set("page", String(page));
         q.set("limit", String(limit));
-        return r<PagedResponse<SpecialQuiz>>(`/admin/quizzes/special?${q.toString()}`, "GET");
+        return r<PagedResponse<SpecialQuiz>>(
+          `/admin/quizzes/special?${q.toString()}`,
+          "GET",
+        );
       },
 
       create: (payload: {
@@ -423,19 +578,16 @@ export function createApi(baseUrl: string, token?: string | null) {
           title?: string;
           description?: string;
           is_active?: boolean;
-        }
+        },
       ) =>
         r<Record<string, never>>(
           `/admin/quizzes/special/${quizId}`,
           "PUT",
-          payload
+          payload,
         ),
 
       delete: (quizId: string) =>
-        r<Record<string, never>>(
-          `/admin/quizzes/special/${quizId}`,
-          "DELETE"
-        ),
+        r<Record<string, never>>(`/admin/quizzes/special/${quizId}`, "DELETE"),
 
       getDetails: (quizId: string) =>
         r<SpecialQuizDetail>(`/admin/quizzes/special/${quizId}`, "GET"),
@@ -465,7 +617,7 @@ export function createApi(baseUrl: string, token?: string | null) {
           icon_url?: string;
           points_required?: number;
           competition_id?: string;
-        }
+        },
       ) => r<Record<string, never>>(`/admin/awards/${awardId}`, "PUT", payload),
 
       delete: (awardId: number) =>
@@ -473,24 +625,29 @@ export function createApi(baseUrl: string, token?: string | null) {
 
       grant: (payload: { award_id: number; user_id: string; reason: string }) =>
         r<Record<string, never>>("/admin/awards/grant", "POST", payload),
-      
+
       processCompleted: () =>
-        r<{ processed_count: number }>("/admin/awards/process-completed", "POST"),
+        r<{ processed_count: number }>(
+          "/admin/awards/process-completed",
+          "POST",
+        ),
 
       listRecent: (page = 1, limit = 10) => {
         const q = new URLSearchParams();
         q.set("page", String(page));
         q.set("limit", String(limit));
-        return r<PagedResponse<{
-          id: string;
-          award_title: string;
-          user_full_name: string;
-          user_email: string;
-          granted_at: string;
-          reason: string;
-        }>>(`/admin/awards/recent?${q.toString()}`, "GET");
+        return r<
+          PagedResponse<{
+            id: string;
+            award_title: string;
+            user_full_name: string;
+            user_email: string;
+            granted_at: string;
+            reason: string;
+          }>
+        >(`/admin/awards/recent?${q.toString()}`, "GET");
       },
-      getDetails: (award_id: number) => 
+      getDetails: (award_id: number) =>
         r<AwardDetail>(`/admin/awards/${award_id}`, "GET"),
     },
 
@@ -501,7 +658,10 @@ export function createApi(baseUrl: string, token?: string | null) {
         q.set("page", String(page));
         q.set("limit", String(limit));
         if (status) q.set("status", status);
-        return r<PagedResponse<Competition>>(`/admin/competitions?${q.toString()}`, "GET");
+        return r<PagedResponse<Competition>>(
+          `/admin/competitions?${q.toString()}`,
+          "GET",
+        );
       },
       create: (payload: {
         title: string;
@@ -518,32 +678,35 @@ export function createApi(baseUrl: string, token?: string | null) {
           description?: string;
           end_date?: string;
           prize_details?: string;
-        }
+        },
       ) =>
         r<Record<string, never>>(
           `/admin/competitions/${competitionId}`,
           "PUT",
-          payload
+          payload,
         ),
 
       delete: (competitionId: string) =>
         r<Record<string, never>>(
           `/admin/competitions/${competitionId}`,
-          "DELETE"
+          "DELETE",
         ),
 
       announceWinners: (competitionId: string) =>
         r<Record<string, never>>(
           `/admin/competitions/${competitionId}/announce-winners`,
-          "POST"
+          "POST",
         ),
 
       getParticipants: (competitionId: string, page = 1, limit = 25) => {
         const q = new URLSearchParams();
         q.set("page", String(page));
         q.set("limit", String(limit));
-        return r<PagedResponse<CompetitionParticipant>>(`/admin/competitions/${competitionId}/participants?${q.toString()}`, "GET");
-      }
+        return r<PagedResponse<CompetitionParticipant>>(
+          `/admin/competitions/${competitionId}/participants?${q.toString()}`,
+          "GET",
+        );
+      },
     },
 
     // ── Section 7: Public Read Endpoints ─────────────────────
@@ -556,7 +719,7 @@ export function createApi(baseUrl: string, token?: string | null) {
       getCategoryWords: (categoryId: number, page = 1, limit = 20) =>
         r<CategoryWords>(
           `/categories/${categoryId}/words?page=${page}&limit=${limit}`,
-          "GET"
+          "GET",
         ),
 
       getCompetitions: () => r<Competition[]>("/competitions/", "GET"),
@@ -567,7 +730,7 @@ export function createApi(baseUrl: string, token?: string | null) {
       getCompetitionLeaderboard: (competitionId: string) =>
         r<CompetitionLeaderboardEntry[]>(
           `/competitions/${competitionId}/leaderboard`,
-          "GET"
+          "GET",
         ),
 
       getGlobalLeaderboard: (params: {

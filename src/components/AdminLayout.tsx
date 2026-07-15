@@ -8,6 +8,7 @@ import {
   Trophy,
   Globe,
   LogOut,
+  Images,
 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useState } from "react";
@@ -15,6 +16,7 @@ import { useState } from "react";
 const navItems = [
   { label: "Dashboard",      path: "/dashboard",   icon: LayoutDashboard },
   { label: "Users",          path: "/users",        icon: Users },
+  { label: "Avatars",        path: "/avatars",      icon: Images },
   { label: "Categories",     path: "/categories",   icon: FolderOpen },
   { label: "Competitions",   path: "/competitions", icon: Trophy },
   { label: "Special Quizzes",path: "/quizzes",      icon: Puzzle },
@@ -25,6 +27,7 @@ const navItems = [
 const pageTitles: Record<string, string> = {
   "/dashboard": "Dashboard",
   "/users": "Users",
+  "/avatars": "Avatars",
   "/categories": "Categories",
   "/quizzes": "Special Quizzes",
   "/awards": "Awards",

@@ -7,6 +7,7 @@ import AdminLayout from "@/components/AdminLayout";
 import LoginPage from "@/pages/LoginPage";
 import DashboardPage from "@/pages/DashboardPage";
 import UsersPage from "@/pages/UsersPage";
+import AvatarsPage from "@/pages/AvatarsPage";
 import CategoriesPage from "@/pages/CategoriesPage";
 import QuizzesPage from "@/pages/QuizzesPage";
 import AwardsPage from "@/pages/AwardsPage";
@@ -27,10 +28,22 @@ function AppRoutes() {
 
   return (
     <Routes>
-      <Route path="/" element={isAuthenticated ? <Navigate to="/dashboard" replace /> : <LoginPage />} />
-      <Route element={<ProtectedRoute><AdminLayout /></ProtectedRoute>}>
+      <Route
+        path="/"
+        element={
+          isAuthenticated ? <Navigate to="/dashboard" replace /> : <LoginPage />
+        }
+      />
+      <Route
+        element={
+          <ProtectedRoute>
+            <AdminLayout />
+          </ProtectedRoute>
+        }
+      >
         <Route path="/dashboard" element={<DashboardPage />} />
         <Route path="/users" element={<UsersPage />} />
+        <Route path="/avatars" element={<AvatarsPage />} />
         <Route path="/categories" element={<CategoriesPage />} />
         <Route path="/quizzes" element={<QuizzesPage />} />
         <Route path="/awards" element={<AwardsPage />} />

@@ -1,4 +1,10 @@
-import React, { createContext, useContext, useState, useCallback, useEffect } from "react";
+import React, {
+  createContext,
+  useContext,
+  useState,
+  useCallback,
+  useEffect,
+} from "react";
 import { createApi, type User } from "@/lib/api";
 
 const STORAGE_KEYS = {
@@ -17,16 +23,16 @@ interface AuthContextType {
   api: ReturnType<typeof createApi>;
 }
 
-const DEFAULT_BASE_URL = "/api";
+const DEFAULT_BASE_URL = import.meta.env.VITE_API_BASE_URL?.trim() || "/api";
 
 const AuthContext = createContext<AuthContextType | null>(null);
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [token, setToken] = useState<string | null>(
-    () => localStorage.getItem(STORAGE_KEYS.token)
+  const [token, setToken] = useState<string | null>(() =>
+    localStorage.getItem(STORAGE_KEYS.token),
   );
-  const [refreshToken, setRefreshToken] = useState<string | null>(
-    () => localStorage.getItem(STORAGE_KEYS.refresh)
+  const [refreshToken, setRefreshToken] = useState<string | null>(() =>
+    localStorage.getItem(STORAGE_KEYS.refresh),
   );
   const [user, setUser] = useState<User | null>(() => {
     try {
@@ -68,7 +74,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const login = useCallback(
     async (email: string, password: string): Promise<boolean | string> => {
       try {
-        const data = await createApi(DEFAULT_BASE_URL).auth.login(email, password);
+        const data = await createApi(DEFAULT_BASE_URL).auth.login(
+          email,
+          password,
+        );
         if (!data.user.is_admin) {
           return "Access Denied: You are not authorized to access the admin portal.";
         }
@@ -83,7 +92,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return false;
       }
     },
-    []
+    [],
   );
 
   const logout = useCallback(() => {
@@ -96,7 +105,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     localStorage.removeItem(STORAGE_KEYS.user);
     // Fire-and-forget — best effort
     if (rt) {
-      createApi(DEFAULT_BASE_URL).auth.logout(rt).catch(() => {});
+      createApi(DEFAULT_BASE_URL)
+        .auth.logout(rt)
+        .catch(() => {});
     }
   }, [refreshToken]);
 

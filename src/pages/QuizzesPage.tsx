@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import { StatusBadge } from "@/components/shared/StatusBadge";
 import { DataPagination } from "@/components/shared/DataPagination";
@@ -12,8 +13,11 @@ import type { SpecialQuiz } from "@/lib/api";
 
 const toLocalInput = (iso: string | undefined) => {
   if (!iso) return "";
-  try { return new Date(iso).toISOString().slice(0, 16); }
-  catch { return ""; }
+  try {
+    return new Date(iso).toISOString().slice(0, 16);
+  } catch {
+    return "";
+  }
 };
 
 const PAGE_SIZE = 25;
@@ -21,21 +25,34 @@ const PAGE_SIZE = 25;
 export default function QuizzesPage() {
   const { api } = useAuth();
   const qc = useQueryClient();
+  const navigate = useNavigate();
 
   const [editQuiz, setEditQuiz] = useState<SpecialQuiz | null>(null);
   const [isNew, setIsNew] = useState(false);
   const [deleteQuiz, setDeleteQuiz] = useState<SpecialQuiz | null>(null);
   const [inspectQuizId, setInspectQuizId] = useState<string | null>(null);
   const [page, setPage] = useState(1);
+  const [quizConflict, setQuizConflict] = useState<{
+    available_rounds: number;
+    requested_rounds: number;
+    category_id?: number;
+    message: string;
+  } | null>(null);
 
   const [formTitle, setFormTitle] = useState("");
   const [formDesc, setFormDesc] = useState("");
   const [formCompId, setFormCompId] = useState("");
   const [formCatId, setFormCatId] = useState<number | undefined>(undefined);
   const [formRounds, setFormRounds] = useState(5);
-  const [formDifficulty, setFormDifficulty] = useState<"easy" | "medium" | "hard">("medium");
-  const [formOrder, setFormOrder] = useState<"random" | "alphabetical">("random");
-  const [formLetterCount, setFormLetterCount] = useState<number | undefined>(undefined);
+  const [formDifficulty, setFormDifficulty] = useState<
+    "easy" | "medium" | "hard"
+  >("medium");
+  const [formOrder, setFormOrder] = useState<"random" | "alphabetical">(
+    "random",
+  );
+  const [formLetterCount, setFormLetterCount] = useState<number | undefined>(
+    undefined,
+  );
   const [formValidFrom, setFormValidFrom] = useState("");
   const [formValidUntil, setFormValidUntil] = useState("");
   const [formActive, setFormActive] = useState(true);
@@ -64,12 +81,31 @@ export default function QuizzesPage() {
 
   const { data: quizDetail, isLoading: isDetailLoading } = useQuery({
     queryKey: ["special-quiz-detail", inspectQuizId],
-    queryFn: () => (inspectQuizId ? api.adminQuizzes.getDetails(inspectQuizId) : null),
+    queryFn: () =>
+      inspectQuizId ? api.adminQuizzes.getDetails(inspectQuizId) : null,
     enabled: !!inspectQuizId,
   });
 
   const invalidate = () =>
     qc.invalidateQueries({ queryKey: ["special-quizzes"] });
+
+  const buildCreatePayload = (rounds = formRounds) => ({
+    title: formTitle,
+    description: formDesc,
+    competition_id: formCompId,
+    num_rounds: rounds,
+    difficulty: formDifficulty,
+    category_id: formCatId,
+    order_type: formOrder,
+    letter_count: formLetterCount,
+    valid_from: formValidFrom
+      ? new Date(formValidFrom).toISOString()
+      : undefined,
+    valid_until: formValidUntil
+      ? new Date(formValidUntil).toISOString()
+      : undefined,
+    is_active: formActive,
+  });
 
   // ── Mutations ───────────────────────────────────────────────
   const createMutation = useMutation({
@@ -86,24 +122,53 @@ export default function QuizzesPage() {
       valid_until?: string;
       is_active?: boolean;
     }) => api.adminQuizzes.create(payload),
-    onSuccess: () => { 
-      toast.success("Quiz created"); 
-      invalidate(); 
-      setEditQuiz(null); 
+    onSuccess: () => {
+      toast.success("Quiz created");
+      invalidate();
+      setEditQuiz(null);
+      setQuizConflict(null);
       qc.invalidateQueries({ queryKey: ["admin-activities"] });
     },
-    onError: (e: Error) => toast.error(e.message),
+    onError: (e: Error) => {
+      const error = e as Error & {
+        detail?: string;
+        status?: number;
+        payload?: {
+          available_rounds?: number;
+          requested_rounds?: number;
+          message?: string;
+        } | null;
+      };
+
+      if (
+        error.status === 409 &&
+        error.detail === "insufficient_category_words"
+      ) {
+        setQuizConflict({
+          available_rounds: error.payload?.available_rounds ?? 1,
+          requested_rounds: error.payload?.requested_rounds ?? formRounds,
+          category_id: formCatId,
+          message: error.payload?.message || error.message,
+        });
+        return;
+      }
+
+      toast.error(e.message);
+    },
   });
 
   const updateMutation = useMutation({
-    mutationFn: ({ id, payload }: {
+    mutationFn: ({
+      id,
+      payload,
+    }: {
       id: string;
       payload: { title?: string; description?: string; is_active?: boolean };
     }) => api.adminQuizzes.update(id, payload),
-    onSuccess: () => { 
-      toast.success("Quiz updated"); 
-      invalidate(); 
-      setEditQuiz(null); 
+    onSuccess: () => {
+      toast.success("Quiz updated");
+      invalidate();
+      setEditQuiz(null);
       qc.invalidateQueries({ queryKey: ["admin-activities"] });
     },
     onError: (e: Error) => toast.error(e.message),
@@ -111,10 +176,10 @@ export default function QuizzesPage() {
 
   const deleteMutation = useMutation({
     mutationFn: (id: string) => api.adminQuizzes.delete(id),
-    onSuccess: () => { 
-      toast.success("Quiz deleted"); 
-      invalidate(); 
-      setDeleteQuiz(null); 
+    onSuccess: () => {
+      toast.success("Quiz deleted");
+      invalidate();
+      setDeleteQuiz(null);
       qc.invalidateQueries({ queryKey: ["admin-activities"] });
     },
     onError: (e: Error) => toast.error(e.message),
@@ -123,7 +188,9 @@ export default function QuizzesPage() {
   // ── Handlers ────────────────────────────────────────────────
   const openCreate = () => {
     setIsNew(true);
-    setFormTitle(""); setFormDesc("");
+    setQuizConflict(null);
+    setFormTitle("");
+    setFormDesc("");
     setFormCatId(undefined);
     setFormRounds(5);
     setFormDifficulty("medium");
@@ -153,7 +220,7 @@ export default function QuizzesPage() {
       setFormValidUntil("");
       return;
     }
-    const comp = competitions.find(c => c.id === cId);
+    const comp = competitions.find((c) => c.id === cId);
     if (comp) {
       setFormValidFrom(toLocalInput(comp.start_date));
       setFormValidUntil(toLocalInput(comp.end_date));
@@ -162,32 +229,31 @@ export default function QuizzesPage() {
 
   const openEdit = (q: SpecialQuiz) => {
     setIsNew(false);
-    setFormTitle(q.title); setFormDesc(q.description);
+    setFormTitle(q.title);
+    setFormDesc(q.description);
     setFormActive(q.is_active);
     setEditQuiz(q);
   };
 
   const handleSave = () => {
-    if (!formTitle.trim()) { toast.error("Title is required"); return; }
+    if (!formTitle.trim()) {
+      toast.error("Title is required");
+      return;
+    }
     if (isNew) {
-      if (!formCompId) { toast.error("Select a competition"); return; }
-      createMutation.mutate({
-        title: formTitle,
-        description: formDesc,
-        competition_id: formCompId,
-        num_rounds: formRounds,
-        difficulty: formDifficulty,
-        category_id: formCatId,
-        order_type: formOrder,
-        letter_count: formLetterCount,
-        valid_from: formValidFrom ? new Date(formValidFrom).toISOString() : undefined,
-        valid_until: formValidUntil ? new Date(formValidUntil).toISOString() : undefined,
-        is_active: formActive,
-      });
+      if (!formCompId) {
+        toast.error("Select a competition");
+        return;
+      }
+      createMutation.mutate(buildCreatePayload());
     } else if (editQuiz?.id) {
       updateMutation.mutate({
         id: editQuiz.id,
-        payload: { title: formTitle, description: formDesc, is_active: formActive },
+        payload: {
+          title: formTitle,
+          description: formDesc,
+          is_active: formActive,
+        },
       });
     }
   };
@@ -241,49 +307,58 @@ export default function QuizzesPage() {
                       <td className="px-4 py-3 font-medium">
                         <div className="flex flex-col">
                           <span>{q.title}</span>
-                          <span className="text-[10px] text-muted-foreground font-mono">{q.id}</span>
+                          <span className="text-[10px] text-muted-foreground font-mono">
+                            {q.id}
+                          </span>
                         </div>
                       </td>
-                    <td className="px-4 py-3 text-xs">
-                      {q.competition_title || "Unlinked"}
-                    </td>
-                    <td className="px-4 py-3 text-[10px] font-mono leading-tight whitespace-nowrap">
-                      {formatDate(q.valid_from)}<br />
-                      to {formatDate(q.valid_until)}
-                    </td>
-                    <td className="px-4 py-3">
-                      <StatusBadge variant={q.is_active ? "active" : "inactive"}>
-                        {q.is_active ? "Active" : "Inactive"}
-                      </StatusBadge>
-                    </td>
-                    <td className="px-4 py-3 flex items-center gap-2">
-                      <button
-                        onClick={() => setInspectQuizId(q.id)}
-                        className="px-2 py-1 text-[10px] uppercase tracking-wider font-semibold border border-primary/20 text-primary hover:bg-primary hover:text-primary-foreground transition-colors"
-                      >
-                        Inspect
-                      </button>
-                      <button
-                        onClick={() => openEdit(q)}
-                        className="px-2 py-1 text-[10px] uppercase tracking-wider font-semibold border border-border hover:bg-accent transition-colors"
-                      >
-                        Edit
-                      </button>
-                      <button
-                        onClick={() => setDeleteQuiz(q)}
-                        className="px-2 py-1 text-[10px] uppercase tracking-wider font-semibold border border-destructive/20 text-destructive hover:bg-destructive hover:text-destructive-foreground transition-colors"
-                      >
-                        Delete
-                      </button>
-                    </td>
-                  </tr>
-                );
-              })}
+                      <td className="px-4 py-3 text-xs">
+                        {q.competition_title || "Unlinked"}
+                      </td>
+                      <td className="px-4 py-3 text-[10px] font-mono leading-tight whitespace-nowrap">
+                        {formatDate(q.valid_from)}
+                        <br />
+                        to {formatDate(q.valid_until)}
+                      </td>
+                      <td className="px-4 py-3">
+                        <StatusBadge
+                          variant={q.is_active ? "active" : "inactive"}
+                        >
+                          {q.is_active ? "Active" : "Inactive"}
+                        </StatusBadge>
+                      </td>
+                      <td className="px-4 py-3 flex items-center gap-2">
+                        <button
+                          onClick={() => setInspectQuizId(q.id)}
+                          className="px-2 py-1 text-[10px] uppercase tracking-wider font-semibold border border-primary/20 text-primary hover:bg-primary hover:text-primary-foreground transition-colors"
+                        >
+                          Inspect
+                        </button>
+                        <button
+                          onClick={() => openEdit(q)}
+                          className="px-2 py-1 text-[10px] uppercase tracking-wider font-semibold border border-border hover:bg-accent transition-colors"
+                        >
+                          Edit
+                        </button>
+                        <button
+                          onClick={() => setDeleteQuiz(q)}
+                          className="px-2 py-1 text-[10px] uppercase tracking-wider font-semibold border border-destructive/20 text-destructive hover:bg-destructive hover:text-destructive-foreground transition-colors"
+                        >
+                          Delete
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
           </tbody>
         </table>
       </div>
 
-      <DataPagination currentPage={page} totalPages={Math.max(1, totalPages)} onPageChange={setPage} />
+      <DataPagination
+        currentPage={page}
+        totalPages={Math.max(1, totalPages)}
+        onPageChange={setPage}
+      />
 
       <Modal
         open={!!editQuiz}
@@ -302,14 +377,18 @@ export default function QuizzesPage() {
               disabled={createMutation.isPending || updateMutation.isPending}
               className="px-4 py-2 text-sm bg-primary text-primary-foreground hover:opacity-90 disabled:opacity-50"
             >
-              {createMutation.isPending || updateMutation.isPending ? "Saving..." : "Save"}
+              {createMutation.isPending || updateMutation.isPending
+                ? "Saving..."
+                : "Save"}
             </button>
           </>
         }
       >
         <div className="space-y-4">
           <div>
-            <label className="block text-xs font-medium uppercase tracking-wide mb-1.5">Title</label>
+            <label className="block text-xs font-medium uppercase tracking-wide mb-1.5">
+              Title
+            </label>
             <input
               value={formTitle}
               onChange={(e) => setFormTitle(e.target.value)}
@@ -317,7 +396,9 @@ export default function QuizzesPage() {
             />
           </div>
           <div>
-            <label className="block text-xs font-medium uppercase tracking-wide mb-1.5">Description</label>
+            <label className="block text-xs font-medium uppercase tracking-wide mb-1.5">
+              Description
+            </label>
             <textarea
               value={formDesc}
               onChange={(e) => setFormDesc(e.target.value)}
@@ -328,7 +409,9 @@ export default function QuizzesPage() {
           {isNew && (
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <label className="block text-xs font-medium uppercase tracking-wide mb-1.5">Competition</label>
+                <label className="block text-xs font-medium uppercase tracking-wide mb-1.5">
+                  Competition
+                </label>
                 <select
                   value={formCompId}
                   onChange={(e) => handleCompChange(e.target.value)}
@@ -336,20 +419,30 @@ export default function QuizzesPage() {
                 >
                   <option value="">— Select competition —</option>
                   {competitions.map((c) => (
-                    <option key={c.id} value={c.id}>{c.title}</option>
+                    <option key={c.id} value={c.id}>
+                      {c.title}
+                    </option>
                   ))}
                 </select>
               </div>
               <div>
-                <label className="block text-xs font-medium uppercase tracking-wide mb-1.5">Category (Optional)</label>
+                <label className="block text-xs font-medium uppercase tracking-wide mb-1.5">
+                  Category (Optional)
+                </label>
                 <select
                   value={formCatId ?? ""}
-                  onChange={(e) => setFormCatId(e.target.value ? Number(e.target.value) : undefined)}
+                  onChange={(e) =>
+                    setFormCatId(
+                      e.target.value ? Number(e.target.value) : undefined,
+                    )
+                  }
                   className="w-full border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-ring"
                 >
                   <option value="">All Categories</option>
                   {categories.map((c) => (
-                    <option key={c.id} value={c.id}>{c.title}</option>
+                    <option key={c.id} value={c.id}>
+                      {c.title}
+                    </option>
                   ))}
                 </select>
               </div>
@@ -359,7 +452,9 @@ export default function QuizzesPage() {
             <>
               <div className="grid grid-cols-3 gap-4">
                 <div>
-                  <label className="block text-xs font-medium uppercase tracking-wide mb-1.5">Rounds</label>
+                  <label className="block text-xs font-medium uppercase tracking-wide mb-1.5">
+                    Rounds
+                  </label>
                   <input
                     type="number"
                     min={1}
@@ -369,10 +464,16 @@ export default function QuizzesPage() {
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-medium uppercase tracking-wide mb-1.5">Difficulty</label>
+                  <label className="block text-xs font-medium uppercase tracking-wide mb-1.5">
+                    Difficulty
+                  </label>
                   <select
                     value={formDifficulty}
-                    onChange={(e) => setFormDifficulty(e.target.value as "easy" | "medium" | "hard")}
+                    onChange={(e) =>
+                      setFormDifficulty(
+                        e.target.value as "easy" | "medium" | "hard",
+                      )
+                    }
                     className="w-full border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-ring"
                   >
                     <option value="easy">Easy</option>
@@ -381,23 +482,33 @@ export default function QuizzesPage() {
                   </select>
                 </div>
                 <div>
-                  <label className="block text-xs font-medium uppercase tracking-wide mb-1.5">Letter Count</label>
+                  <label className="block text-xs font-medium uppercase tracking-wide mb-1.5">
+                    Letter Count
+                  </label>
                   <input
                     type="number"
                     min={3}
                     placeholder="Any"
                     value={formLetterCount ?? ""}
-                    onChange={(e) => setFormLetterCount(e.target.value ? Number(e.target.value) : undefined)}
+                    onChange={(e) =>
+                      setFormLetterCount(
+                        e.target.value ? Number(e.target.value) : undefined,
+                      )
+                    }
                     className="w-full border border-input bg-background px-3 py-2 text-sm font-mono focus:outline-none focus:ring-1 focus:ring-ring"
                   />
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-xs font-medium uppercase tracking-wide mb-1.5">Order Type</label>
+                  <label className="block text-xs font-medium uppercase tracking-wide mb-1.5">
+                    Order Type
+                  </label>
                   <select
                     value={formOrder}
-                    onChange={(e) => setFormOrder(e.target.value as "random" | "alphabetical")}
+                    onChange={(e) =>
+                      setFormOrder(e.target.value as "random" | "alphabetical")
+                    }
                     className="w-full border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-ring"
                   >
                     <option value="random">Random</option>
@@ -408,7 +519,9 @@ export default function QuizzesPage() {
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-xs font-medium uppercase tracking-wide mb-1.5">Valid From</label>
+                  <label className="block text-xs font-medium uppercase tracking-wide mb-1.5">
+                    Valid From
+                  </label>
                   <input
                     type="datetime-local"
                     value={formValidFrom}
@@ -417,7 +530,9 @@ export default function QuizzesPage() {
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-medium uppercase tracking-wide mb-1.5">Valid Until</label>
+                  <label className="block text-xs font-medium uppercase tracking-wide mb-1.5">
+                    Valid Until
+                  </label>
                   <input
                     type="datetime-local"
                     value={formValidUntil}
@@ -429,14 +544,88 @@ export default function QuizzesPage() {
             </>
           )}
           <div className="flex items-center gap-3">
-            <label className="text-xs font-medium uppercase tracking-wide">Active</label>
+            <label className="text-xs font-medium uppercase tracking-wide">
+              Active
+            </label>
             <button
               onClick={() => setFormActive(!formActive)}
               className={`w-10 h-5 flex items-center transition-colors ${formActive ? "bg-primary" : "bg-muted border border-border"}`}
             >
-              <div className={`w-4 h-4 bg-primary-foreground border border-border transition-transform ${formActive ? "translate-x-5" : "translate-x-0.5"}`} />
+              <div
+                className={`w-4 h-4 bg-primary-foreground border border-border transition-transform ${formActive ? "translate-x-5" : "translate-x-0.5"}`}
+              />
             </button>
           </div>
+        </div>
+      </Modal>
+
+      <Modal
+        open={!!quizConflict}
+        onClose={() => setQuizConflict(null)}
+        title="Not enough approved words in this category"
+        size="md"
+        footer={
+          <div className="flex flex-wrap gap-2">
+            <button
+              onClick={() => {
+                if (quizConflict) {
+                  createMutation.mutate(
+                    buildCreatePayload(quizConflict.available_rounds),
+                  );
+                }
+              }}
+              className="px-4 py-2 text-sm bg-primary text-primary-foreground"
+            >
+              Create {quizConflict?.available_rounds ?? 1} rounds
+            </button>
+            <button
+              onClick={() => {
+                if (quizConflict?.category_id) {
+                  navigate(
+                    `/categories?reviewCategory=${quizConflict.category_id}&reviewTab=suggestions`,
+                  );
+                }
+                setQuizConflict(null);
+              }}
+              className="px-4 py-2 text-sm border border-border"
+            >
+              Review suggestions
+            </button>
+            <button
+              onClick={() => {
+                if (quizConflict?.category_id) {
+                  navigate(
+                    `/categories?reviewCategory=${quizConflict.category_id}&reviewTab=approved`,
+                  );
+                }
+                setQuizConflict(null);
+              }}
+              className="px-4 py-2 text-sm border border-border"
+            >
+              Manage approved words
+            </button>
+            <button
+              onClick={() => {
+                setFormLetterCount(undefined);
+                setQuizConflict(null);
+              }}
+              className="px-4 py-2 text-sm border border-border"
+            >
+              Adjust letter count
+            </button>
+          </div>
+        }
+      >
+        <div className="space-y-3 text-sm">
+          <p>
+            {quizConflict?.message ||
+              "This category does not have enough approved words for the requested quiz size."}
+          </p>
+          <p className="text-muted-foreground">
+            The portal can create a smaller quiz using the available approved
+            rounds, or you can approve more words in the category before trying
+            again.
+          </p>
         </div>
       </Modal>
 
@@ -477,52 +666,97 @@ export default function QuizzesPage() {
           <div className="space-y-6">
             <div className="grid grid-cols-3 gap-4 border-b border-border pb-4">
               <div>
-                <p className="text-[10px] uppercase tracking-wider text-muted-foreground mb-1">Title</p>
+                <p className="text-[10px] uppercase tracking-wider text-muted-foreground mb-1">
+                  Title
+                </p>
                 <p className="text-sm font-semibold">{quizDetail.title}</p>
               </div>
               <div>
-                <p className="text-[10px] uppercase tracking-wider text-muted-foreground mb-1">Competition</p>
-                <p className="text-sm">{quizDetail.competition_title || "N/A"}</p>
+                <p className="text-[10px] uppercase tracking-wider text-muted-foreground mb-1">
+                  Competition
+                </p>
+                <p className="text-sm">
+                  {quizDetail.competition_title || "N/A"}
+                </p>
               </div>
               <div>
-                <p className="text-[10px] uppercase tracking-wider text-muted-foreground mb-1">Total Rounds</p>
-                <p className="text-sm font-mono">{Array.isArray(quizDetail.rounds) ? quizDetail.rounds.length : 0}</p>
+                <p className="text-[10px] uppercase tracking-wider text-muted-foreground mb-1">
+                  Total Rounds
+                </p>
+                <p className="text-sm font-mono">
+                  {Array.isArray(quizDetail.rounds)
+                    ? quizDetail.rounds.length
+                    : 0}
+                </p>
               </div>
             </div>
 
             <div className="space-y-4">
-              <h4 className="text-xs font-bold uppercase tracking-widest text-primary">Mathematical Rounds Construction</h4>
-              {(Array.isArray(quizDetail.rounds) ? quizDetail.rounds : []).map((round, idx) => (
-                <div key={idx} className="border border-border p-4 bg-muted/10 space-y-3">
-                  <div className="flex items-center justify-between">
-                    <span className="text-[10px] font-bold bg-foreground text-background px-2 py-0.5">ROUND {idx + 1}</span>
-                    <div className="flex gap-4 text-[10px] font-mono text-muted-foreground">
-                      <span>SEED: <strong className="text-foreground">{round.seed_word}</strong></span>
-                      <span>SCRAMBLE: <strong className="text-foreground">{round.scrambled_letters}</strong></span>
+              <h4 className="text-xs font-bold uppercase tracking-widest text-primary">
+                Mathematical Rounds Construction
+              </h4>
+              {(Array.isArray(quizDetail.rounds) ? quizDetail.rounds : []).map(
+                (round, idx) => (
+                  <div
+                    key={idx}
+                    className="border border-border p-4 bg-muted/10 space-y-3"
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] font-bold bg-foreground text-background px-2 py-0.5">
+                        ROUND {idx + 1}
+                      </span>
+                      <div className="flex gap-4 text-[10px] font-mono text-muted-foreground">
+                        <span>
+                          SEED:{" "}
+                          <strong className="text-foreground">
+                            {round.seed_word}
+                          </strong>
+                        </span>
+                        <span>
+                          SCRAMBLE:{" "}
+                          <strong className="text-foreground">
+                            {round.scrambled_letters}
+                          </strong>
+                        </span>
+                      </div>
+                    </div>
+
+                    <div>
+                      <p className="text-[10px] uppercase tracking-wider text-muted-foreground mb-2">
+                        Valid Solutions (
+                        {Array.isArray(round.solutions)
+                          ? round.solutions.length
+                          : 0}
+                        )
+                      </p>
+                      <div className="flex flex-wrap gap-1.5">
+                        {(Array.isArray(round.solutions)
+                          ? round.solutions
+                          : []
+                        ).map((sol, sidx) => (
+                          <div
+                            key={sidx}
+                            className="bg-background border border-border px-2 py-1 text-[11px] flex items-center gap-2"
+                          >
+                            <span className="font-medium">{sol.word}</span>
+                            <span className="text-muted-foreground border-l border-border pl-2">
+                              {sol.points}pt
+                            </span>
+                          </div>
+                        ))}
+                      </div>
                     </div>
                   </div>
-                  
-                  <div>
-                    <p className="text-[10px] uppercase tracking-wider text-muted-foreground mb-2">
-                       Valid Solutions ({Array.isArray(round.solutions) ? round.solutions.length : 0})
-                    </p>
-                    <div className="flex flex-wrap gap-1.5">
-                      {(Array.isArray(round.solutions) ? round.solutions : []).map((sol, sidx) => (
-                        <div key={sidx} className="bg-background border border-border px-2 py-1 text-[11px] flex items-center gap-2">
-                          <span className="font-medium">{sol.word}</span>
-                          <span className="text-muted-foreground border-l border-border pl-2">{sol.points}pt</span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-              ))}
+                ),
+              )}
             </div>
           </div>
         )}
 
         {!isDetailLoading && !quizDetail && (
-          <div className="py-12 text-center text-muted-foreground">Failed to load quiz metadata.</div>
+          <div className="py-12 text-center text-muted-foreground">
+            Failed to load quiz metadata.
+          </div>
         )}
       </Modal>
     </div>
