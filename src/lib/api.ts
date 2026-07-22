@@ -158,6 +158,72 @@ export interface CategorySuggestionItem {
   reason?: string | null;
 }
 
+export type WordModerationStatus = "review" | "rejected" | "excluded" | "all";
+export type WordModerationAction = "approve" | "reject";
+export type WordModerationSort =
+  | "confidence_desc"
+  | "confidence_asc"
+  | "word"
+  | "category"
+  | "newest";
+
+export interface WordModerationItem {
+  id: number;
+  word: string;
+  meaning: string | null;
+  part_of_speech: string | null;
+  origin: string | null;
+  category: {
+    id: number;
+    title: string;
+    visibility: "public" | "private";
+  };
+  status: string;
+  confidence: number | null;
+  reason: string | null;
+  source: string;
+  is_excluded: boolean;
+  refined_at: string | null;
+  created_at: string;
+}
+
+export interface WordModerationFilters {
+  status?: WordModerationStatus;
+  category_id?: number;
+  search?: string;
+  min_confidence?: number;
+  max_confidence?: number;
+  source?: string;
+  visibility?: "public" | "private";
+  sort?: WordModerationSort;
+  page?: number;
+  limit?: number;
+}
+
+export interface WordModerationQueue {
+  items: WordModerationItem[];
+  total: number;
+  page: number;
+  limit: number;
+  status_counts: Record<string, number>;
+}
+
+export interface WordModerationActionResult {
+  relationship_id: number;
+  word: string;
+  category_id: number;
+  action: WordModerationAction;
+  status: string;
+}
+
+export interface WordModerationBulkResult {
+  action: WordModerationAction;
+  requested_count: number;
+  updated_count: number;
+  skipped_count: number;
+  skipped_ids: number[];
+}
+
 export interface SpecialQuiz {
   id: string;
   title: string;
@@ -543,6 +609,46 @@ export function createApi(baseUrl: string, token?: string | null) {
         r<Record<string, never>>(
           `/admin/categories/${categoryId}/words/${encodeURIComponent(word)}`,
           "DELETE",
+        ),
+    },
+
+    // ── Admin — Global Word Moderation ──────────────────────
+    adminWordModeration: {
+      list: (params: WordModerationFilters = {}) => {
+        const q = new URLSearchParams();
+        q.set("status", params.status ?? "review");
+        q.set("page", String(params.page ?? 1));
+        q.set("limit", String(params.limit ?? 50));
+        q.set("sort", params.sort ?? "confidence_desc");
+        if (params.category_id) q.set("category_id", String(params.category_id));
+        if (params.search) q.set("search", params.search);
+        if (params.min_confidence !== undefined) q.set("min_confidence", String(params.min_confidence));
+        if (params.max_confidence !== undefined) q.set("max_confidence", String(params.max_confidence));
+        if (params.source) q.set("source", params.source);
+        if (params.visibility) q.set("visibility", params.visibility);
+        return r<WordModerationQueue>(`/admin/word-moderation?${q.toString()}`, "GET");
+      },
+
+      decide: (relationshipId: number, action: WordModerationAction) =>
+        r<WordModerationActionResult>(
+          `/admin/word-moderation/${relationshipId}/${action}`,
+          "POST",
+        ),
+
+      decideSelected: (action: WordModerationAction, ids: number[]) =>
+        r<WordModerationBulkResult>("/admin/word-moderation/bulk", "POST", {
+          action,
+          ids,
+        }),
+
+      decideFiltered: (
+        action: WordModerationAction,
+        filters: Omit<WordModerationFilters, "status" | "sort" | "page" | "limit">,
+      ) =>
+        r<WordModerationBulkResult>(
+          "/admin/word-moderation/bulk-filtered",
+          "POST",
+          { action, ...filters, confirm: true },
         ),
     },
 

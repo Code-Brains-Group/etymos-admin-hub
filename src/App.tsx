@@ -8,6 +8,7 @@ import LoginPage from "@/pages/LoginPage";
 import DashboardPage from "@/pages/DashboardPage";
 import UsersPage from "@/pages/UsersPage";
 import AvatarsPage from "@/pages/AvatarsPage";
+import WordModerationPage from "@/pages/WordModerationPage";
 import CategoriesPage from "@/pages/CategoriesPage";
 import QuizzesPage from "@/pages/QuizzesPage";
 import AwardsPage from "@/pages/AwardsPage";
@@ -44,6 +45,7 @@ function AppRoutes() {
         <Route path="/dashboard" element={<DashboardPage />} />
         <Route path="/users" element={<UsersPage />} />
         <Route path="/avatars" element={<AvatarsPage />} />
+        <Route path="/word-moderation" element={<WordModerationPage />} />
         <Route path="/categories" element={<CategoriesPage />} />
         <Route path="/quizzes" element={<QuizzesPage />} />
         <Route path="/awards" element={<AwardsPage />} />

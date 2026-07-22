@@ -9,6 +9,7 @@ import {
   Globe,
   LogOut,
   Images,
+  ListChecks,
 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useState } from "react";
@@ -18,6 +19,7 @@ const navItems = [
   { label: "Users",          path: "/users",        icon: Users },
   { label: "Avatars",        path: "/avatars",      icon: Images },
   { label: "Categories",     path: "/categories",   icon: FolderOpen },
+  { label: "Word Moderation",path: "/word-moderation", icon: ListChecks },
   { label: "Competitions",   path: "/competitions", icon: Trophy },
   { label: "Special Quizzes",path: "/quizzes",      icon: Puzzle },
   { label: "Awards",         path: "/awards",       icon: Award },
@@ -29,6 +31,7 @@ const pageTitles: Record<string, string> = {
   "/users": "Users",
   "/avatars": "Avatars",
   "/categories": "Categories",
+  "/word-moderation": "Word Moderation",
   "/quizzes": "Special Quizzes",
   "/awards": "Awards",
   "/competitions": "Competitions",
