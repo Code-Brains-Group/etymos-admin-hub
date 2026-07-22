@@ -257,7 +257,10 @@ export interface SpecialQuiz {
   description: string;
   competition_title?: string;
   quiz_id?: string;
-  category_id: number;
+  category_id?: number | null;
+  difficulty?: "easy" | "medium" | "hard";
+  order_type?: "random" | "alphabetical";
+  letter_count?: number | null;
   num_questions?: number;
   num_rounds?: number;
   valid_from?: string;
@@ -274,6 +277,18 @@ export interface SpecialQuizRound {
 
 export interface SpecialQuizDetail extends SpecialQuiz {
   rounds: SpecialQuizRound[];
+}
+
+export interface CategoryAvailability {
+  category_id: number;
+  total_words: number;
+  new_words: number;
+  available_after_cooldown: number;
+  recommended_max_rounds: number;
+  cooldown_days: number;
+  quiz_ready: boolean;
+  review_word_count: number;
+  enrichment_eta: CategoryEnrichmentEta;
 }
 
 export interface Award {
@@ -699,7 +714,7 @@ export function createApi(baseUrl: string, token?: string | null) {
         difficulty: "easy" | "medium" | "hard";
         category_id?: number;
         order_type?: "random" | "alphabetical";
-        letter_count?: number;
+        letter_count?: number | null;
         valid_from?: string;
         valid_until?: string;
         is_active?: boolean;
@@ -854,6 +869,18 @@ export function createApi(baseUrl: string, token?: string | null) {
           `/categories/${categoryId}/words?page=${page}&limit=${limit}`,
           "GET",
         ),
+
+      getCategoryAvailability: (categoryId: number, letterCount?: number | null) => {
+        const q = new URLSearchParams();
+        if (letterCount !== undefined && letterCount !== null) {
+          q.set("letter_count", String(letterCount));
+        }
+        const suffix = q.toString() ? `?${q.toString()}` : "";
+        return r<CategoryAvailability>(
+          `/categories/${categoryId}/availability${suffix}`,
+          "GET",
+        );
+      },
 
       getCompetitions: () => r<Competition[]>("/competitions/", "GET"),
 

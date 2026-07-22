@@ -50,9 +50,7 @@ export default function QuizzesPage() {
   const [formOrder, setFormOrder] = useState<"random" | "alphabetical">(
     "random",
   );
-  const [formLetterCount, setFormLetterCount] = useState<number | undefined>(
-    undefined,
-  );
+  const [formLetterCount, setFormLetterCount] = useState<number | null>(null);
   const [formValidFrom, setFormValidFrom] = useState("");
   const [formValidUntil, setFormValidUntil] = useState("");
   const [formActive, setFormActive] = useState(true);
@@ -86,6 +84,17 @@ export default function QuizzesPage() {
     enabled: !!inspectQuizId,
   });
 
+  const {
+    data: categoryAvailability,
+    isLoading: availabilityLoading,
+    error: availabilityError,
+  } = useQuery({
+    queryKey: ["category-availability", formCatId, formLetterCount],
+    queryFn: () =>
+      api.public.getCategoryAvailability(formCatId!, formLetterCount),
+    enabled: isNew && !!editQuiz && !!formCatId,
+  });
+
   const invalidate = () =>
     qc.invalidateQueries({ queryKey: ["special-quizzes"] });
 
@@ -117,7 +126,7 @@ export default function QuizzesPage() {
       difficulty: "easy" | "medium" | "hard";
       category_id?: number;
       order_type?: "random" | "alphabetical";
-      letter_count?: number;
+      letter_count?: number | null;
       valid_from?: string;
       valid_until?: string;
       is_active?: boolean;
@@ -131,7 +140,14 @@ export default function QuizzesPage() {
     },
     onError: (e: Error) => {
       const error = e as Error & {
-        detail?: string;
+        detail?:
+          | string
+          | {
+              detail?: string;
+              message?: string;
+              available_rounds?: number;
+              requested_rounds?: number;
+            };
         status?: number;
         payload?: {
           available_rounds?: number;
@@ -140,15 +156,29 @@ export default function QuizzesPage() {
         } | null;
       };
 
+      const nestedDetail =
+        typeof error.detail === "object" ? error.detail : undefined;
+      const errorCode =
+        typeof error.detail === "string"
+          ? error.detail
+          : nestedDetail?.detail;
+
       if (
         error.status === 409 &&
-        error.detail === "insufficient_category_words"
+        errorCode === "insufficient_category_words"
       ) {
         setQuizConflict({
-          available_rounds: error.payload?.available_rounds ?? 1,
-          requested_rounds: error.payload?.requested_rounds ?? formRounds,
+          available_rounds:
+            nestedDetail?.available_rounds ??
+            error.payload?.available_rounds ??
+            1,
+          requested_rounds:
+            nestedDetail?.requested_rounds ??
+            error.payload?.requested_rounds ??
+            formRounds,
           category_id: formCatId,
-          message: error.payload?.message || error.message,
+          message:
+            nestedDetail?.message || error.payload?.message || error.message,
         });
         return;
       }
@@ -195,7 +225,7 @@ export default function QuizzesPage() {
     setFormRounds(5);
     setFormDifficulty("medium");
     setFormOrder("random");
-    setFormLetterCount(undefined);
+    setFormLetterCount(null);
     setFormActive(true);
 
     // Pre-select the first competition and populate its dates immediately
@@ -245,6 +275,10 @@ export default function QuizzesPage() {
         toast.error("Select a competition");
         return;
       }
+      if (!Number.isInteger(formRounds) || formRounds < 1 || formRounds > 50) {
+        toast.error("Rounds must be a whole number from 1 to 50");
+        return;
+      }
       createMutation.mutate(buildCreatePayload());
     } else if (editQuiz?.id) {
       updateMutation.mutate({
@@ -276,6 +310,7 @@ export default function QuizzesPage() {
               <th className="px-4 py-3 text-left w-12">#</th>
               <th className="px-4 py-3 text-left">Title</th>
               <th className="px-4 py-3 text-left">Competition</th>
+              <th className="px-4 py-3 text-left">Length</th>
               <th className="px-4 py-3 text-left">Validity</th>
               <th className="px-4 py-3 text-left">Status</th>
               <th className="px-4 py-3 text-left w-24">Actions</th>
@@ -285,7 +320,7 @@ export default function QuizzesPage() {
             {isLoading
               ? Array.from({ length: 5 }).map((_, i) => (
                   <tr key={i} className="border-b border-border">
-                    {Array.from({ length: 5 }).map((__, j) => (
+                    {Array.from({ length: 7 }).map((__, j) => (
                       <td key={j} className="px-4 py-3">
                         <LoadingSkeleton className="h-4 w-full" />
                       </td>
@@ -314,6 +349,11 @@ export default function QuizzesPage() {
                       </td>
                       <td className="px-4 py-3 text-xs">
                         {q.competition_title || "Unlinked"}
+                      </td>
+                      <td className="px-4 py-3 text-xs font-mono whitespace-nowrap">
+                        {q.letter_count == null
+                          ? "Any length"
+                          : `${q.letter_count} letters`}
                       </td>
                       <td className="px-4 py-3 text-[10px] font-mono leading-tight whitespace-nowrap">
                         {formatDate(q.valid_from)}
@@ -458,6 +498,7 @@ export default function QuizzesPage() {
                   <input
                     type="number"
                     min={1}
+                    max={50}
                     value={formRounds}
                     onChange={(e) => setFormRounds(Number(e.target.value))}
                     className="w-full border border-input bg-background px-3 py-2 text-sm font-mono focus:outline-none focus:ring-1 focus:ring-ring"
@@ -485,20 +526,73 @@ export default function QuizzesPage() {
                   <label className="block text-xs font-medium uppercase tracking-wide mb-1.5">
                     Letter Count
                   </label>
-                  <input
-                    type="number"
-                    min={3}
-                    placeholder="Any"
-                    value={formLetterCount ?? ""}
+                  <select
+                    value={formLetterCount === null ? "any" : String(formLetterCount)}
                     onChange={(e) =>
                       setFormLetterCount(
-                        e.target.value ? Number(e.target.value) : undefined,
+                        e.target.value === "any" ? null : Number(e.target.value),
                       )
                     }
-                    className="w-full border border-input bg-background px-3 py-2 text-sm font-mono focus:outline-none focus:ring-1 focus:ring-ring"
-                  />
+                    className="w-full border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-ring"
+                  >
+                    <option value="any">Any length (mixed)</option>
+                    {Array.from({ length: 31 }, (_, index) => index + 2).map(
+                      (length) => (
+                        <option key={length} value={length}>
+                          {length} letters
+                        </option>
+                      ),
+                    )}
+                  </select>
+                  <p className="mt-1.5 text-[11px] leading-relaxed text-muted-foreground">
+                    Any length sends no exact-length filter and can generate a
+                    different scramble length in each round.
+                  </p>
                 </div>
               </div>
+              {formCatId && (
+                <div className="border border-border bg-muted/20 p-3 text-xs">
+                  {availabilityLoading ? (
+                    <div className="flex items-center gap-2 text-muted-foreground">
+                      <LoadingSkeleton className="h-4 w-24" /> Checking approved-word capacity…
+                    </div>
+                  ) : availabilityError ? (
+                    <p className="text-destructive">
+                      Approved-word availability could not be loaded. You can
+                      still submit and let the backend validate the request.
+                    </p>
+                  ) : categoryAvailability ? (
+                    <div className="space-y-1.5">
+                      <p>
+                        <strong className="font-mono text-foreground">
+                          {categoryAvailability.total_words}
+                        </strong>{" "}
+                        approved word
+                        {categoryAvailability.total_words === 1 ? "" : "s"}{" "}
+                        available for {formLetterCount === null ? "Any length" : `${formLetterCount} letters`}.
+                      </p>
+                      <p className="text-muted-foreground">
+                        Special quizzes use this full capacity and ignore admin
+                        exposure history and cooldown.
+                      </p>
+                      {formRounds > categoryAvailability.total_words && (
+                        <p className="font-medium text-amber-700">
+                          The requested {formRounds} rounds exceed this capacity.
+                          Choose Any length, another exact length, or fewer rounds.
+                        </p>
+                      )}
+                      {!!categoryAvailability.review_word_count && (
+                        <p className="text-primary">
+                          {categoryAvailability.review_word_count} additional
+                          suggestion
+                          {categoryAvailability.review_word_count === 1 ? "" : "s"}{" "}
+                          await review.
+                        </p>
+                      )}
+                    </div>
+                  ) : null}
+                </div>
+              )}
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-xs font-medium uppercase tracking-wide mb-1.5">
@@ -566,18 +660,20 @@ export default function QuizzesPage() {
         size="md"
         footer={
           <div className="flex flex-wrap gap-2">
-            <button
-              onClick={() => {
-                if (quizConflict) {
-                  createMutation.mutate(
-                    buildCreatePayload(quizConflict.available_rounds),
-                  );
-                }
-              }}
-              className="px-4 py-2 text-sm bg-primary text-primary-foreground"
-            >
-              Create {quizConflict?.available_rounds ?? 1} rounds
-            </button>
+            {!!quizConflict?.available_rounds && (
+              <button
+                onClick={() => {
+                  if (quizConflict) {
+                    createMutation.mutate(
+                      buildCreatePayload(quizConflict.available_rounds),
+                    );
+                  }
+                }}
+                className="px-4 py-2 text-sm bg-primary text-primary-foreground"
+              >
+                Create {quizConflict.available_rounds} rounds
+              </button>
+            )}
             <button
               onClick={() => {
                 if (quizConflict?.category_id) {
@@ -606,12 +702,12 @@ export default function QuizzesPage() {
             </button>
             <button
               onClick={() => {
-                setFormLetterCount(undefined);
+                setFormLetterCount(null);
                 setQuizConflict(null);
               }}
               className="px-4 py-2 text-sm border border-border"
             >
-              Adjust letter count
+              Use Any length
             </button>
           </div>
         }
@@ -623,8 +719,8 @@ export default function QuizzesPage() {
           </p>
           <p className="text-muted-foreground">
             The portal can create a smaller quiz using the available approved
-            rounds, or you can approve more words in the category before trying
-            again.
+            rounds, select Any length, or approve more words in the category
+            before trying again.
           </p>
         </div>
       </Modal>
@@ -664,7 +760,7 @@ export default function QuizzesPage() {
 
         {!isDetailLoading && quizDetail && (
           <div className="space-y-6">
-            <div className="grid grid-cols-3 gap-4 border-b border-border pb-4">
+            <div className="grid grid-cols-4 gap-4 border-b border-border pb-4">
               <div>
                 <p className="text-[10px] uppercase tracking-wider text-muted-foreground mb-1">
                   Title
@@ -687,6 +783,16 @@ export default function QuizzesPage() {
                   {Array.isArray(quizDetail.rounds)
                     ? quizDetail.rounds.length
                     : 0}
+                </p>
+              </div>
+              <div>
+                <p className="text-[10px] uppercase tracking-wider text-muted-foreground mb-1">
+                  Letter Mode
+                </p>
+                <p className="text-sm font-mono">
+                  {quizDetail.letter_count == null
+                    ? "Any length"
+                    : `${quizDetail.letter_count} letters`}
                 </p>
               </div>
             </div>
@@ -718,6 +824,22 @@ export default function QuizzesPage() {
                             {round.scrambled_letters}
                           </strong>
                         </span>
+                      </div>
+                    </div>
+
+                    <div>
+                      <p className="text-[10px] uppercase tracking-wider text-muted-foreground mb-2">
+                        Scrambled Letters ({round.scrambled_letters.length})
+                      </p>
+                      <div className="flex flex-wrap gap-1.5">
+                        {Array.from(round.scrambled_letters).map((letter, letterIndex) => (
+                          <span
+                            key={`${letter}-${letterIndex}`}
+                            className="flex h-8 w-8 items-center justify-center border border-primary/30 bg-primary/5 font-mono text-sm font-bold text-primary"
+                          >
+                            {letter}
+                          </span>
+                        ))}
                       </div>
                     </div>
 
