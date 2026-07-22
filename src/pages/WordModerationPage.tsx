@@ -12,6 +12,7 @@ import { DataPagination } from "@/components/shared/DataPagination";
 import { EmptyState } from "@/components/shared/EmptyState";
 import { LoadingSkeleton } from "@/components/shared/LoadingSkeleton";
 import { useAuth } from "@/contexts/AuthContext";
+import { useSearchParams } from "react-router-dom";
 import type {
   Category,
   WordModerationAction,
@@ -79,11 +80,14 @@ function statusClass(status: string) {
 export default function WordModerationPage() {
   const { api } = useAuth();
   const queryClient = useQueryClient();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [status, setStatus] = useState<Exclude<WordModerationStatus, "all">>("review");
   const [page, setPage] = useState(1);
   const [searchDraft, setSearchDraft] = useState("");
   const [search, setSearch] = useState("");
-  const [categoryId, setCategoryId] = useState("");
+  const [categoryId, setCategoryId] = useState(
+    () => searchParams.get("category_id") || "",
+  );
   const [minConfidence, setMinConfidence] = useState("");
   const [maxConfidence, setMaxConfidence] = useState("");
   const [source, setSource] = useState("");
@@ -287,7 +291,15 @@ export default function WordModerationPage() {
           <select
             value={categoryId}
             onChange={(event) => {
-              setCategoryId(event.target.value);
+              const nextCategoryId = event.target.value;
+              setCategoryId(nextCategoryId);
+              const nextParams = new URLSearchParams(searchParams);
+              if (nextCategoryId) {
+                nextParams.set("category_id", nextCategoryId);
+              } else {
+                nextParams.delete("category_id");
+              }
+              setSearchParams(nextParams, { replace: true });
               resetForFilter();
             }}
             aria-label="Filter by category"

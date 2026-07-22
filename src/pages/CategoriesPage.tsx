@@ -7,7 +7,7 @@ import { LoadingSkeleton } from "@/components/shared/LoadingSkeleton";
 import { DataPagination } from "@/components/shared/DataPagination";
 import { toast } from "sonner";
 import { Eye, Pencil, Sparkles, Trash2, X } from "lucide-react";
-import { useSearchParams } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import type {
   Category,
   CategoryDetail,
@@ -37,9 +37,38 @@ const SOURCE_HINT_OPTIONS = [
   "technology",
 ] as const;
 
+function shouldPollCategory(category?: Category) {
+  if (!category || category.enrichment_eta?.state === "quota_delayed") return false;
+  if (category.enrichment_eta?.state === "processing") return true;
+  return ["pending", "enriching", "retrying"].includes(
+    category.enrichment_status || "",
+  );
+}
+
+function etaTiming(category?: Category) {
+  const eta = category?.enrichment_eta;
+  if (!eta) return null;
+  if (eta.state === "queued") {
+    const minimum = eta.estimated_min_seconds;
+    const maximum = eta.estimated_max_seconds;
+    const range =
+      minimum !== null && maximum !== null
+        ? `Approximately ${Math.max(1, Math.floor(minimum / 60))}–${Math.max(1, Math.ceil(maximum / 60))} minutes`
+        : null;
+    return [eta.queue_position ? `Queue position ${eta.queue_position}` : null, range]
+      .filter(Boolean)
+      .join(" · ");
+  }
+  if (eta.state === "quota_delayed" && eta.retry_at) {
+    return `Automatic retry scheduled for ${new Date(eta.retry_at).toLocaleString()}`;
+  }
+  return null;
+}
+
 export default function CategoriesPage() {
   const { api } = useAuth();
   const qc = useQueryClient();
+  const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
 
   const [editCat, setEditCat] = useState<Category | null>(null);
@@ -152,6 +181,14 @@ export default function CategoriesPage() {
   } = useQuery({
     queryKey: ["admin-categories", page],
     queryFn: () => api.adminCategories.list(page, PAGE_SIZE),
+    refetchInterval: (query) => {
+      const response = query.state.data;
+      const items = Array.isArray(response)
+        ? (response as Category[])
+        : response?.items || [];
+      return items.some(shouldPollCategory) ? 30000 : false;
+    },
+    refetchIntervalInBackground: false,
   });
 
   const categories = useMemo(() => {
@@ -217,18 +254,23 @@ export default function CategoriesPage() {
       return matchesVisibility && matchesActive && matchesEnrichment;
     });
   }, [categories, filterActive, filterEnrichment, filterVisibility]);
-  const totalCategories = filteredCategories.length;
-  const totalPages = Math.max(1, Math.ceil(totalCategories / PAGE_SIZE));
+  const filtersActive =
+    filterVisibility !== "all" ||
+    filterActive !== "all" ||
+    filterEnrichment !== "all";
+  const totalCategories = filtersActive
+    ? filteredCategories.length
+    : categoriesData?.total_count ?? categories.length;
+  const totalPages = filtersActive
+    ? 1
+    : Math.max(1, Math.ceil(totalCategories / PAGE_SIZE));
 
   const { data: detailData, isLoading: detailLoading } = useQuery({
     queryKey: ["admin-category-detail", detailCat?.id],
     queryFn: () => api.adminCategories.getDetail(detailCat!.id),
     enabled: !!detailCat,
     refetchInterval: (query) => {
-      const status = query.state.data?.enrichment_status;
-      return status && ["pending", "enriching", "retrying"].includes(status)
-        ? 30000
-        : false;
+      return shouldPollCategory(query.state.data) ? 30000 : false;
     },
     refetchIntervalInBackground: false,
   });
@@ -541,11 +583,10 @@ export default function CategoriesPage() {
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {filteredCategories
-            .slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
-            .map((cat, i) => {
+          {filteredCategories.map((cat, i) => {
               const globalIndex = (page - 1) * PAGE_SIZE + i + 1;
               const effectiveImageUrl = cat.image_url || defaultAvatar?.image_url;
+              const timing = etaTiming(cat);
               return (
                 <div
                   key={cat.id}
@@ -588,7 +629,7 @@ export default function CategoriesPage() {
                           cat.word_count < 20 && (
                             <span
                               className="text-[9px] font-bold bg-amber-500/10 text-amber-600 px-1.5 py-0.5 border border-amber-500/20"
-                              title="Low words: API will fall back to full dictionary"
+                              title="Low approved-word count. Review suggestions or add known-good words."
                             >
                               ⚠️ LOW WORDS
                             </span>
@@ -610,7 +651,45 @@ export default function CategoriesPage() {
                       <span className="border border-border px-1.5 py-0.5 bg-background uppercase">
                         {cat.enrichment_status || "ready"}
                       </span>
+                      <span
+                        className={`border px-1.5 py-0.5 uppercase ${
+                          cat.quiz_ready
+                            ? "border-success/30 bg-success/10 text-success"
+                            : "border-amber-500/30 bg-amber-500/10 text-amber-700"
+                        }`}
+                      >
+                        {cat.quiz_ready ? "Quiz ready" : "Not quiz ready"}
+                      </span>
+                      {!!cat.review_word_count && (
+                        <span className="border border-primary/30 bg-primary/5 px-1.5 py-0.5 text-primary">
+                          Review: {cat.review_word_count}
+                        </span>
+                      )}
                     </div>
+                    {cat.enrichment_eta?.message && (
+                      <div className="mb-3 border-l-2 border-primary/30 bg-muted/30 px-3 py-2 text-xs leading-relaxed text-muted-foreground">
+                        <p>{cat.enrichment_eta.message}</p>
+                        {timing && <p className="mt-1 font-medium text-foreground">{timing}</p>}
+                        {cat.enrichment_eta.state === "awaiting_review" && (
+                          <button
+                            type="button"
+                            onClick={() => navigate(`/word-moderation?category_id=${cat.id}`)}
+                            className="mt-2 font-semibold text-primary hover:underline"
+                          >
+                            Review suggested words →
+                          </button>
+                        )}
+                        {["needs_guidance", "no_matches"].includes(cat.enrichment_eta.state) && (
+                          <button
+                            type="button"
+                            onClick={() => openEdit(cat)}
+                            className="mt-2 font-semibold text-primary hover:underline"
+                          >
+                            Improve instructions and examples →
+                          </button>
+                        )}
+                      </div>
+                    )}
                     <div className="flex items-center justify-between pt-4 border-t border-border">
                       <div className="flex gap-2">
                         <button
@@ -914,7 +993,9 @@ export default function CategoriesPage() {
                       <span className="text-foreground font-medium">
                         Suggested words:
                       </span>{" "}
-                      {detailData?.suggested_word_count ?? "—"}
+                      {detailData?.review_word_count ??
+                        detailData?.suggested_word_count ??
+                        "—"}
                     </div>
                     <div>
                       <span className="text-foreground font-medium">
@@ -970,6 +1051,52 @@ export default function CategoriesPage() {
                     </span>{" "}
                     {detailStatus}
                   </div>
+                  <div>
+                    <span className="text-foreground font-medium">
+                      Quiz readiness:
+                    </span>{" "}
+                    {detailData?.quiz_ready ? "Ready to play" : "Not ready"}
+                  </div>
+                  <div>
+                    <span className="text-foreground font-medium">
+                      Awaiting review:
+                    </span>{" "}
+                    {detailData?.review_word_count ?? 0} word
+                    {(detailData?.review_word_count ?? 0) === 1 ? "" : "s"}
+                  </div>
+                  {detailData?.enrichment_eta?.message && (
+                    <div className="border-l-2 border-primary/30 bg-muted/30 px-3 py-2 text-xs leading-relaxed">
+                      <p>{detailData.enrichment_eta.message}</p>
+                      {etaTiming(detailData) && (
+                        <p className="mt-1 font-medium text-foreground">
+                          {etaTiming(detailData)}
+                        </p>
+                      )}
+                      {detailData.enrichment_eta.state === "awaiting_review" && (
+                        <button
+                          type="button"
+                          onClick={() => navigate(`/word-moderation?category_id=${detailData.id}`)}
+                          className="mt-2 font-semibold text-primary hover:underline"
+                        >
+                          Open filtered Word Moderation →
+                        </button>
+                      )}
+                      {["needs_guidance", "no_matches"].includes(
+                        detailData.enrichment_eta.state,
+                      ) && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setWordsCat(null);
+                            openEdit(detailData);
+                          }}
+                          className="mt-2 font-semibold text-primary hover:underline"
+                        >
+                          Improve instructions and examples →
+                        </button>
+                      )}
+                    </div>
+                  )}
                   {detailData?.sample_words?.length ? (
                     <div>
                       <span className="text-foreground font-medium">

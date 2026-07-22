@@ -127,6 +127,33 @@ export interface Category {
   updated_at?: string;
   word_count?: number;
   sample_words?: string[];
+  quiz_ready?: boolean;
+  review_word_count?: number;
+  enrichment_eta?: CategoryEnrichmentEta;
+}
+
+export type CategoryEtaState =
+  | "queued"
+  | "processing"
+  | "retrying"
+  | "quota_delayed"
+  | "awaiting_review"
+  | "needs_guidance"
+  | "no_matches"
+  | "filter_no_matches"
+  | "failed"
+  | "inactive"
+  | "ready";
+
+export interface CategoryEnrichmentEta {
+  state: CategoryEtaState;
+  queue_position: number | null;
+  estimated_min_seconds: number | null;
+  estimated_max_seconds: number | null;
+  estimated_ready_at: string | null;
+  retry_at: string | null;
+  is_estimate: boolean;
+  message: string;
 }
 
 export interface CategoryDetail extends Category {
