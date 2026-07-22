@@ -178,7 +178,7 @@ export default function AvatarsPage() {
       <div className="flex items-start justify-between gap-4">
         <div>
           <h1 className="font-display text-3xl font-bold">Managed Avatars</h1>
-          <p className="mt-1 text-sm text-muted-foreground">Control the images available during registration and profile editing.</p>
+          <p className="mt-1 text-sm text-muted-foreground">Control registration and profile images. The active default also appears on category cards without custom artwork.</p>
         </div>
         <button onClick={openCreate} className="flex items-center gap-2 bg-primary px-4 py-2 text-sm text-primary-foreground hover:opacity-90">
           <Plus className="h-4 w-4" /> Create avatar
@@ -292,7 +292,7 @@ export default function AvatarsPage() {
               <input type="checkbox" checked={form.is_active} onChange={(event) => setForm({ ...form, is_active: event.target.checked, is_default: event.target.checked ? form.is_default : false })} className="h-4 w-4 accent-primary" />
             </label>
             <label className={`flex items-center justify-between border border-border p-3 text-sm ${!form.is_active ? "cursor-not-allowed opacity-50" : "cursor-pointer"}`}>
-              <span><strong className="block font-medium">Default</strong><span className="text-xs text-muted-foreground">Preselected avatar</span></span>
+              <span><strong className="block font-medium">Default</strong><span className="text-xs text-muted-foreground">Preselected and category fallback</span></span>
               <input type="checkbox" checked={form.is_default} disabled={!form.is_active} onChange={(event) => setForm({ ...form, is_default: event.target.checked })} className="h-4 w-4 accent-primary" />
             </label>
           </div>

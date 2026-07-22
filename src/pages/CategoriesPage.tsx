@@ -163,6 +163,19 @@ export default function CategoriesPage() {
     return [] as Category[];
   }, [categoriesData]);
 
+  const { data: avatarsData } = useQuery({
+    queryKey: ["admin-avatars", "category-fallback"],
+    queryFn: () => api.adminAvatars.list(1, 100),
+    staleTime: 5 * 60 * 1000,
+  });
+
+  const defaultAvatar = useMemo(() => {
+    const activeAvatars = (avatarsData?.items || [])
+      .filter((avatar) => avatar.is_active)
+      .sort((left, right) => left.sort_order - right.sort_order);
+    return activeAvatars.find((avatar) => avatar.is_default) || activeAvatars[0];
+  }, [avatarsData]);
+
   useEffect(() => {
     const reviewCategoryId = searchParams.get("reviewCategory");
     if (!reviewCategoryId || !categories.length) return;
@@ -532,6 +545,7 @@ export default function CategoriesPage() {
             .slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
             .map((cat, i) => {
               const globalIndex = (page - 1) * PAGE_SIZE + i + 1;
+              const effectiveImageUrl = cat.image_url || defaultAvatar?.image_url;
               return (
                 <div
                   key={cat.id}
@@ -541,14 +555,22 @@ export default function CategoriesPage() {
                     #{globalIndex.toString().padStart(2, "0")}
                   </div>
                   <div className="h-36 bg-muted flex items-center justify-center text-muted-foreground text-xs font-mono">
-                    {cat.image_url ? (
+                    {effectiveImageUrl ? (
                       <img
-                        src={cat.image_url}
+                        src={effectiveImageUrl}
                         alt={cat.title}
                         className="h-full w-full object-cover"
                       />
                     ) : (
                       "No Image"
+                    )}
+                    {!cat.image_url && defaultAvatar && (
+                      <span
+                        className="absolute right-2 top-2 border border-border bg-background/85 px-1.5 py-0.5 text-[9px] font-bold uppercase text-muted-foreground backdrop-blur-sm"
+                        title={`User-facing cards inherit the default avatar: ${defaultAvatar.name}`}
+                      >
+                        Avatar fallback
+                      </span>
                     )}
                   </div>
                   <div className="p-4 flex-1 flex flex-col">
@@ -676,13 +698,42 @@ export default function CategoriesPage() {
           </div>
           <div>
             <label className="block text-xs font-bold uppercase tracking-widest mb-1 text-muted-foreground">
-              Image URL
+              Image URL (Optional)
             </label>
+            <p className="mb-2 text-xs text-muted-foreground">
+              Leave this empty to use the active default avatar on user-facing
+              category cards. The fallback stays linked, so changing the default
+              avatar updates the card without editing this category.
+            </p>
             <input
               value={formImg}
               onChange={(e) => setFormImg(e.target.value)}
+              placeholder="https://example.com/category-image.png"
               className="w-full border border-input bg-background px-3 py-2 text-sm font-mono focus:outline-none focus:ring-1 focus:ring-ring"
             />
+            <div className="mt-3 flex items-center gap-3 border border-border bg-muted/20 p-3">
+              {formImg || defaultAvatar?.image_url ? (
+                <img
+                  src={formImg || defaultAvatar?.image_url}
+                  alt="Effective category card preview"
+                  className="h-16 w-16 border border-border bg-muted object-cover"
+                />
+              ) : (
+                <div className="flex h-16 w-16 items-center justify-center border border-dashed border-border text-[10px] text-muted-foreground">
+                  No image
+                </div>
+              )}
+              <div className="min-w-0 text-xs">
+                <div className="font-semibold text-foreground">Effective card image</div>
+                <p className="mt-1 text-muted-foreground">
+                  {formImg
+                    ? "Custom category image"
+                    : defaultAvatar
+                      ? `Default avatar fallback: ${defaultAvatar.name}`
+                      : "No active avatar is available, so the category card will have no image."}
+                </p>
+              </div>
+            </div>
           </div>
           <div>
             <label className="block text-xs font-bold uppercase tracking-widest mb-1 text-muted-foreground">
@@ -864,6 +915,16 @@ export default function CategoriesPage() {
                         Suggested words:
                       </span>{" "}
                       {detailData?.suggested_word_count ?? "—"}
+                    </div>
+                    <div>
+                      <span className="text-foreground font-medium">
+                        Card image:
+                      </span>{" "}
+                      {detailData?.image_url
+                        ? "Custom category image"
+                        : defaultAvatar
+                          ? `Default avatar fallback (${defaultAvatar.name})`
+                          : "No image"}
                     </div>
                     {(detailData?.matching_instructions ||
                       detailData?.source_category_hints?.length ||
